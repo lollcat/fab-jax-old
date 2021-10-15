@@ -1,1 +1,1 @@
-# FLow Annealed Importance Sampling Boostrap (FAB) implementation in JAX
+# Flow Annealed Importance Sampling Boostrap (FAB) implementation in JAX
