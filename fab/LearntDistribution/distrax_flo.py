@@ -12,13 +12,14 @@ import numpy as np
 
 PRNGKey = chex.PRNGKey
 
-# TODO: types, and inherit from distrax.Distribution
+
 
 
 def make_rational_quadratic_spline_dist_funcs(
-        event_shape: Tuple, flow_num_layers: int = 8,
+        x_ndim: int, flow_num_layers: int = 8,
                  mlp_hidden_size_per_x_dim: int = 2,  mlp_num_layers: int = 2, spline_num_bins:
             int = 4):
+        event_shape = (x_ndim,)  # is more general in jax example but here assume x is vector
         n_hidden_units = np.prod(event_shape) * mlp_hidden_size_per_x_dim
 
         get_model = lambda: make_flow_model(
@@ -27,6 +28,9 @@ def make_rational_quadratic_spline_dist_funcs(
                 hidden_sizes=[n_hidden_units] * mlp_num_layers,
                 num_bins=spline_num_bins)
 
+        # TODO: may want to add nan checks to sample, and sample_and_log_prob (as this seems to
+        #  sometimes occur with
+        #  flow models)
         @hk.without_apply_rng
         @hk.transform
         def log_prob(data: XPoints) -> LogProbs:
@@ -47,7 +51,7 @@ def make_rational_quadratic_spline_dist_funcs(
             model = get_model()
             return model.sample(seed=seed, sample_shape=sample_shape)
 
-        return HaikuDistribution(log_prob, sample_and_log_prob, sample)
+        return HaikuDistribution(x_ndim, log_prob, sample_and_log_prob, sample)
 
 
 
