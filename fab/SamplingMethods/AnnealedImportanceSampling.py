@@ -21,7 +21,7 @@ class AnnealedImportanceSampler:
             dim = learnt_distribution.dim
             self.transition_operator_manager = HamiltoneanMonteCarlo(
                 dim, n_intermediate_distributions, self.intermediate_unnormalised_log_prob,
-            additional_transition_operator_kwargs)
+                n_parallel_runs, **additional_transition_operator_kwargs)
         else:
             raise NotImplementedError
         self.n_parallel_runs = n_parallel_runs
