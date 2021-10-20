@@ -13,7 +13,7 @@ Params = Any
 class HaikuDistribution:  # this distribution also takes in trainable parameters into all of it's
     # functions
     dim: int
-    log_prob: hk.Transformed
+    log_prob: hk.Transformed  # all log_prob.apply(params, x)
     sample_and_log_prob: hk.Transformed
     sample: hk.Transformed
 
