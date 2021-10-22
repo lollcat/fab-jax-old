@@ -87,11 +87,10 @@ class HamiltoneanMonteCarlo:
 
 
     @staticmethod
-    def _outer_loop_func(U, grad_U, inner_most_loop_func, L, learnt_dist_params, carry, xs):
+    def _outer_loop_func(U, grad_U, inner_most_loop_func, L, learnt_dist_params, i, carry, xs):
         current_q = carry
         rng_key = xs["rng_key"]
         epsilon = xs["step_size"]
-        i = xs["i"]
         q = current_q
         rng_key, subkey = jax.random.split(rng_key)
         p = jax.random.normal(key=subkey, shape=(q.shape))
@@ -99,11 +98,11 @@ class HamiltoneanMonteCarlo:
         p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
         xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L))
         (p, q), _ = jax.lax.scan(inner_most_loop_func, init=(p, q), xs=xs_inner)
-        p = p - epsilon * grad_U(q) / 2
+        p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
         p = -p
 
-        U_current = U(current_q)
-        U_proposed = U(q)
+        U_current = U(learnt_dist_params, current_q, i)
+        U_proposed = U(learnt_dist_params, q, i)
         current_K = jnp.sum(current_p ** 2) / 2
         proposed_K = jnp.sum(p ** 2) / 2
 
@@ -113,7 +112,7 @@ class HamiltoneanMonteCarlo:
         acceptance_probability_clip_low = jnp.nan_to_num(acceptance_probability, nan=0.0, posinf=0.0,
                                                          neginf=0.0)
         accept = (acceptance_probability_clip_low > jax.random.uniform(key=subkey,
-                                                                       shape=acceptance_probability_clip_low.shape))
+                                shape=acceptance_probability_clip_low.shape))
         current_q = jax.lax.select(accept, q, current_q)
         return current_q, (current_q, acceptance_probability_clip_low)
 
@@ -124,10 +123,10 @@ class HamiltoneanMonteCarlo:
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
               "step_size": step_size}
         inner_most_loop_func = partial(self._inner_most_loop_func, self.grad_U,
-                                       self.n_inner_steps, learnt_distribution_params)
+                                       self.n_inner_steps, learnt_distribution_params, i)
         outer_loop_func = partial(self._outer_loop_func, self.U, self.grad_U,
                                   inner_most_loop_func,
-                                  self.n_inner_steps, learnt_distribution_params)
+                                  self.n_inner_steps, learnt_distribution_params, i)
         current_q, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
             jax.lax.scan(outer_loop_func, init=(current_q), xs=xs)
         return current_q, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop)
