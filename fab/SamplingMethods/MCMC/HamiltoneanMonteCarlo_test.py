@@ -13,7 +13,7 @@ from fab.SamplingMethods.MCMC.HamiltoneanMonteCarlo import HamiltoneanMonteCarlo
 class Test_HMC(absltest.TestCase):
     dim = 2
     n_intermediate_distributions = 2
-    intermediate_target_log_prob_fn = lambda params, x, j: jnp.exp(-jnp.sum(x**2))
+    intermediate_target_log_prob_fn = lambda params, x, j: jnp.exp(-jnp.sum(x**2) + jnp.sum(x))
     batch_size = 5
     n_outer_steps = 2
     n_inner_steps = 4
@@ -66,7 +66,7 @@ class Test_HMC(absltest.TestCase):
         # p_accept HMC
         epsilon = self.HMC_p_accept.get_step_size_param_for_dist(
                 self.initial_state_p_accept.step_size_params, 0)[outer_loop_iter]
-        xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L))
+        xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L, axis=0))
         (p, q), _ = jax.lax.scan(inner_loop_func, init=(p, q), xs=xs_inner)
         chex.assert_shape(p, (self.dim,))
         chex.assert_shape(q, (self.dim,))
@@ -96,7 +96,7 @@ class Test_HMC(absltest.TestCase):
 
         # p_accept HMC
         step_size = self.HMC_p_accept.get_step_size_param_for_dist(
-            self.initial_state_p_accept.step_size_params, 0)
+            self.initial_state_p_accept.step_size_params, i)
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
               "step_size": step_size}
         q_out, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
@@ -105,8 +105,8 @@ class Test_HMC(absltest.TestCase):
         chex.assert_shape(current_q_per_outer_loop, (self.n_outer_steps, *current_q.shape))
         assert not jnp.any(q_out == current_q)
         # grad based HMC
-        self.HMC_grad_based.get_step_size_param_for_dist(
-            self.initial_state_grad_based.step_size_params, 0)
+        step_size = self.HMC_grad_based.get_step_size_param_for_dist(
+            self.initial_state_grad_based.step_size_params, i)
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
               "step_size": step_size}
         q_out, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
@@ -117,8 +117,34 @@ class Test_HMC(absltest.TestCase):
 
 
     def test__run(self):
-        pass
-        # TODO
+        key = next(self.rng)
+        keys = jax.random.split(key, self.batch_size)
+        learnt_distribution_param = None
+        x = jax.random.normal(shape=(self.batch_size, self.dim), key=next(self.rng))
+        i = 0
+        # p_accept
+        step_size = self.HMC_p_accept.get_step_size_param_for_dist(
+            self.initial_state_p_accept.step_size_params, 0)
+        x_out, (x_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
+            self.HMC_p_accept.run(keys, learnt_distribution_param, step_size, x, i)
+        chex.assert_equal_shape([x_out, x])
+        chex.assert_shape(x_per_outer_loop, (self.batch_size, self.n_outer_steps, self.dim))
+        chex.assert_shape(acceptance_probabilities_per_outer_loop, (self.batch_size,
+                                                                    self.n_outer_steps))
+        # gradient based
+        step_size = self.HMC_grad_based.get_step_size_param_for_dist(
+            self.initial_state_grad_based.step_size_params, i)
+        x_out, (x_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
+        self.HMC_grad_based.run(keys, learnt_distribution_param, step_size, x, i)
+        chex.assert_equal_shape([x_out, x])
+        chex.assert_shape(x_per_outer_loop, (self.batch_size, self.n_outer_steps, self.dim))
+        chex.assert_shape(acceptance_probabilities_per_outer_loop, (self.batch_size,
+                                                                    self.n_outer_steps))
+
+
+    def test__run_and_los(self):
+
+
 
 
     def test__with_plot(self):
@@ -126,6 +152,9 @@ class Test_HMC(absltest.TestCase):
             pass # TODO
         else:
             pass
+
+
+    # TODO: eyeball the algorithm to double check all the steps are correct
 
 
 

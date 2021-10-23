@@ -96,7 +96,7 @@ class HamiltoneanMonteCarlo:
         p = jax.random.normal(key=subkey, shape=(q.shape))
         current_p = p
         p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
-        xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L))
+        xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L, axis=0))
         (p, q), _ = jax.lax.scan(inner_most_loop_func, init=(p, q), xs=xs_inner)
         p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
         p = -p
@@ -119,7 +119,7 @@ class HamiltoneanMonteCarlo:
     @partial(jax.vmap, in_axes=(None, 0, None, None, 0, None))
     def run(self, key, learnt_distribution_params, step_size, x, i):
         current_q = x  # set current_q equal to input x from AIS
-        chex.assert_shape(current_q == (self.dim,))
+        chex.assert_shape(current_q, (self.dim,))
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
               "step_size": step_size}
         inner_most_loop_func = partial(self._inner_most_loop_func, self.grad_U,
@@ -155,9 +155,9 @@ class HamiltoneanMonteCarlo:
         return info
 
 
-    def vectorised_run(self, key, learnt_distribution_params,
-                       transition_operator_step_sizes, transition_operator_additional_state_info,
-                       x_batch, i):
+    def run_and_loss(self, key, learnt_distribution_params,
+                     transition_operator_step_sizes, transition_operator_additional_state_info,
+                     x_batch, i):
         seeds = jax.random.split(key, self.batch_size)
         step_size = self.get_step_size_param_for_dist(transition_operator_step_sizes, i)
         x_batch_final, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
@@ -186,13 +186,13 @@ class HamiltoneanMonteCarlo:
     def vectorised_run_with_update(self, key, learnt_distribution_params,
                        transition_operator_state, x_batch, i):
         if self.step_tuning_method == "p_accept":
-            x_out, info = self.vectorised_run(key, learnt_distribution_params,
-                                        transition_operator_state, x_batch, i)
+            x_out, info = self.run_and_loss(key, learnt_distribution_params,
+                                            transition_operator_state, x_batch, i)
             # tune step size to reach target of p_accept = 0.65
             new_transition_operator_state = transition_operator_state
         else:
-            (loss, x_out, info), grads = jax.value_and_grad(self.vectorised_run,
-                                                     has_aux=True, argnums=2)(
+            (loss, x_out, info), grads = jax.value_and_grad(self.run_and_loss,
+                                                            has_aux=True, argnums=2)(
                 key, learnt_distribution_params, transition_operator_state.step_size_params,
                 transition_operator_state.no_grad_params, x_batch, i)
             updates, new_opt_state = self.optimizer.update(grads,
@@ -206,4 +206,3 @@ class HamiltoneanMonteCarlo:
 
         interesting_info = self.get_interesting_info(info)
         return x_out, new_transition_operator_state, interesting_info
-
