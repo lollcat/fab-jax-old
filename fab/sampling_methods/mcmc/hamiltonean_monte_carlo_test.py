@@ -7,7 +7,7 @@ import numpy as np
 from functools import partial
 import distrax
 
-from fab.SamplingMethods.MCMC.HamiltoneanMonteCarlo import HamiltoneanMonteCarlo, \
+from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo, \
     HMCStateGradientBased, HMCStatePAccept
 
 
@@ -132,7 +132,7 @@ class Test_HMC(absltest.TestCase):
         step_size = self.HMC_p_accept.get_step_size_param_for_dist(
             self.initial_state_p_accept.step_size_params, 0)
         x_out, (x_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
-            self.HMC_p_accept.run(keys, learnt_distribution_param, step_size, x, i)
+            self.HMC_p_accept._run(keys, learnt_distribution_param, step_size, x, i)
         chex.assert_equal_shape([x_out, x])
         chex.assert_shape(x_per_outer_loop, (self.batch_size, self.n_outer_steps, self.dim))
         chex.assert_shape(acceptance_probabilities_per_outer_loop, (self.batch_size,
@@ -141,7 +141,7 @@ class Test_HMC(absltest.TestCase):
         step_size = self.HMC_grad_based.get_step_size_param_for_dist(
             self.initial_state_grad_based.step_size_params, i)
         x_out, (x_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
-        self.HMC_grad_based.run(keys, learnt_distribution_param, step_size, x, i)
+        self.HMC_grad_based._run(keys, learnt_distribution_param, step_size, x, i)
         chex.assert_equal_shape([x_out, x])
         chex.assert_shape(x_per_outer_loop, (self.batch_size, self.n_outer_steps, self.dim))
         chex.assert_shape(acceptance_probabilities_per_outer_loop, (self.batch_size,
@@ -197,7 +197,7 @@ class Test_HMC(absltest.TestCase):
         # p_accept
         transition_operator_state = self.initial_state_p_accept
         x_out, new_transition_operator_state, interesting_info = \
-            self.HMC_p_accept.vectorised_run_with_update(
+            self.HMC_p_accept.run(
                 key, learnt_distribution_param, transition_operator_state, x, i)
         assert isinstance(new_transition_operator_state, HMCStatePAccept)
         assert isinstance(interesting_info, dict)
@@ -205,7 +205,7 @@ class Test_HMC(absltest.TestCase):
         # gradient based
         transition_operator_state = self.initial_state_grad_based
         x_out, new_transition_operator_state, interesting_info = \
-            self.HMC_grad_based.vectorised_run_with_update(
+            self.HMC_grad_based.run(
                 key, learnt_distribution_param, transition_operator_state, x, i)
         assert isinstance(new_transition_operator_state, HMCStateGradientBased)
         assert isinstance(interesting_info, dict)
@@ -226,7 +226,7 @@ class Test_HMC(absltest.TestCase):
             for name, transition_operator_state, HMC_class in [
                 ("p_accept", self.initial_state_p_accept, self.HMC_p_accept),
                 ("gradient_based", self.initial_state_grad_based, self.HMC_grad_based)]:
-                jitted_transition = jax.jit(HMC_class.vectorised_run_with_update,
+                jitted_transition = jax.jit(HMC_class.run,
                                             static_argnums=4)
                 x = x_init
                 mean_p_accept_hist = []

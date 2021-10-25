@@ -2,8 +2,8 @@ import jax.numpy as jnp
 import numpy as np
 from fab.types import TargetLogProbFunc, HaikuDistribution
 import jax
+from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
 from functools import partial
-from fab.SamplingMethods.MCMC.HamiltoneanMonteCarlo import HamiltoneanMonteCarlo
 
 class AnnealedImportanceSampler:
     def __init__(self,
@@ -29,18 +29,18 @@ class AnnealedImportanceSampler:
         self.distribution_spacing_type = distribution_spacing_type
         self.Beta_end = Beta_end
         self.setup_n_distributions()
-        # we manage the MCMC params within this class
+        # we manage the mcmc params within this class
         # initialise HMC param class
         self.transition_operator_state = self.transition_operator_manager.get_init_state()
 
     def run(self, key, learnt_distribution_params):
-        x_new, log_w, transition_operator_state = self._run(key, learnt_distribution_params)
+        x_new, log_w, transition_operator_state, aux_info = \
+            self._run(key, learnt_distribution_params, self.transition_operator_state)
         self.transition_operator_state = transition_operator_state
         return x_new, log_w
 
-    
-    # TODO: create jitted version with jax.lax.scan
-    #@jax.jit
+
+    @partial(jax.jit, static_argnums=(0,))
     def _run(self, key, learnt_distribution_params, transition_operator_state):
         key, subkey = jax.random.split(key, 2)
         log_w = jnp.zeros(self.n_parallel_runs)  # log importance weight
@@ -48,24 +48,37 @@ class AnnealedImportanceSampler:
             learnt_distribution_params, seed=subkey, sample_shape=(self.n_parallel_runs,))
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, 
                                                                 x_new, 1) - log_prob_p0
-        for j in range(1, self.n_intermediate_distributions-1):
-            key, subkey = jax.random.split(key, 2)
-            x_new, log_w, transition_operator_state, aux_transition_info = self.perform_transition(key, 
-                                                                               learnt_distribution_params, 
-                                                   transition_operator_state, x_new,
-                                                   log_w, j)
-        return x_new, log_w, transition_operator_state
+        j_s = jnp.arange(1, self.n_intermediate_distributions-1)
+        keys = jax.random.split(key, self.n_intermediate_distributions-2)
+        xs = (keys, j_s)
+        inner_loop_func = partial(self.inner_loop_func, learnt_distribution_params)
+        (x_new, log_w, transition_operator_state), aux_info = \
+            jax.lax.scan(inner_loop_func, init=(x_new, log_w, transition_operator_state),
+                         xs=xs)
+        return x_new, log_w, transition_operator_state, aux_info
+
+    def inner_loop_func(self, learnt_distribution_params, carry, xs):
+        x_new, log_w, transition_operator_state = carry
+        key, j = xs
+        x_new, log_w, transition_operator_state, aux_transition_info = \
+            self.perform_transition(key,
+                                   learnt_distribution_params,
+                                   transition_operator_state,
+                                   x_new,
+                                   log_w,
+                                   j)
+        return (x_new, log_w, transition_operator_state), aux_transition_info
 
 
     def perform_transition(self, key, learnt_distribution_params,
                            transition_operator_state, x_new, log_w, j):
-        x_new, transition_operator_state, aux_transition_info = self.transition_operator_manager.run(key, 
-                                                    learnt_distribution_params,
-                                                     transition_operator_state, x_new,
-                                                     j - 1)
+        x_new, transition_operator_state, aux_transition_info = \
+            self.transition_operator_manager.run(key, learnt_distribution_params,
+                  transition_operator_state, x_new, j - 1)
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, x_new, j + 1) - \
                 self.intermediate_unnormalised_log_prob(learnt_distribution_params, x_new, j)
         return x_new, log_w, transition_operator_state, aux_transition_info
+
 
 
     def intermediate_unnormalised_log_prob(self, learnt_distribution_params, x, j):
@@ -74,6 +87,7 @@ class AnnealedImportanceSampler:
         beta = self.B_space[j]
         return (1-beta) * self.learnt_distribution.log_prob.apply(learnt_distribution_params, x) + beta * \
                self.target_log_prob(x)
+
 
     def setup_n_distributions(self):
         if self.n_intermediate_distributions == 0:

@@ -58,7 +58,7 @@ class HamiltoneanMonteCarlo:
             raise NotImplementedError
 
         def U(learnt_dist_params, q, i):
-            j = i + 1  # j is loop iter param in AnnealedImportanceSampling.py
+            j = i + 1  # j is loop iter param in annealed_importance_sampling.py
             return - self.intermediate_target_log_prob_fn(learnt_dist_params, q, j)
         def grad_U(learnt_dist_params, q, j):
             return jnp.clip(jax.grad(U, argnums=1)(learnt_dist_params, q, j), a_min=-100.0,
@@ -122,10 +122,10 @@ class HamiltoneanMonteCarlo:
 
         U_current = U(learnt_dist_params, current_q, i)
         U_proposed = U(learnt_dist_params, q, i)
-        current_K = jnp.sum(current_p ** 2) / 2
-        proposed_K = jnp.sum(p ** 2) / 2
+        K_current = jnp.sum(current_p ** 2) / 2
+        K_proposed = jnp.sum(p ** 2) / 2
 
-        acceptance_probability = jnp.clip(jnp.exp(U_current - U_proposed + current_K - proposed_K),
+        acceptance_probability = jnp.clip(jnp.exp(U_current - U_proposed + K_current - K_proposed),
                                           a_max=1.0)
         # reject samples that have nan acceptance prob
         acceptance_probability_clip_low = jnp.nan_to_num(acceptance_probability, nan=0.0, posinf=0.0,
@@ -136,7 +136,7 @@ class HamiltoneanMonteCarlo:
         return current_q, (current_q, acceptance_probability_clip_low)
 
     @partial(jax.vmap, in_axes=(None, 0, None, None, 0, None))
-    def run(self, key, learnt_distribution_params, step_size, x, i):
+    def _run(self, key, learnt_distribution_params, step_size, x, i):
         current_q = x  # set current_q equal to input x from AIS
         chex.assert_shape(current_q, (self.dim,))
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
@@ -191,8 +191,8 @@ class HamiltoneanMonteCarlo:
         seeds = jax.random.split(key, self.batch_size)
         step_size = self.get_step_size_param_for_dist(transition_operator_step_size_params, i)
         x_batch_final, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
-            self.run(seeds, learnt_distribution_params,
-                     step_size, x_batch, i)
+            self._run(seeds, learnt_distribution_params,
+                      step_size, x_batch, i)
         info = self.get_key_info(x_batch, current_q_per_outer_loop,
                                  acceptance_probabilities_per_outer_loop,
                                  transition_operator_additional_state_info, i)
@@ -230,8 +230,9 @@ class HamiltoneanMonteCarlo:
 
 
 
-    def vectorised_run_with_update(self, key, learnt_distribution_params,
-                       transition_operator_state, x_batch, i):
+    def run(self, key, learnt_distribution_params,
+            transition_operator_state, x_batch, i):
+        """Vectorised run with updates to transition operator state"""
         if self.step_tuning_method == "p_accept":
             x_out, info = self.run_and_loss(key, learnt_distribution_params,
                                             transition_operator_state.step_size_params,
