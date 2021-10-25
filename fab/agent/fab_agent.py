@@ -34,8 +34,6 @@ class AgentFAB:
         dummy_x = jnp.zeros((batch_size, learnt_distribution.dim))
         self.learnt_distribution_params = self.learnt_distribution.log_prob.init(next(self.rng),
                                                                                  dummy_x)
-        self.loss_and_grad = jax.jit(jax.value_and_grad(self._alpha_2_fab_loss,
-                                                                  argnums=2))
         self.optimizer = optax.chain(
             optax.clip(1.0),
             optax.clip_by_global_norm(1.0),
@@ -60,7 +58,8 @@ class AgentFAB:
 
 
     def _update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
-        (alpha_2_loss, (log_w, log_q_x)), grads = self.loss_and_grad(
+        (alpha_2_loss, (log_w, log_q_x)), grads = jax.value_and_grad(self._alpha_2_fab_loss,
+                                                                  argnums=2, has_aux=True)(
             x_AIS, log_w_AIS, self.learnt_distribution_params
         )
         updates, new_opt_state = self.optimizer.update(grads, opt_state,

@@ -5,6 +5,7 @@ import jax
 from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
 from functools import partial
 
+# TODO: set n_intermediate distributions to make more sense (0 means IS)
 class AnnealedImportanceSampler:
     def __init__(self,
                  learnt_distribution: HaikuDistribution,
