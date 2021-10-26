@@ -2,6 +2,7 @@ from fab.sampling_methods.annealed_importance_sampling import AnnealedImportance
 import jax.numpy as jnp
 from fab.types import TargetLogProbFunc, HaikuDistribution
 import haiku as hk
+from functools import partial
 import numpy as np
 import jax
 import optax
@@ -42,9 +43,7 @@ class AgentFAB:
             optax.scale_by_adam(),
             optax.scale(-lr))
         self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
-        self.update = jax.jit(self._update)
         self._history = []
-
 
 
     def run(self):
@@ -59,19 +58,17 @@ class AgentFAB:
         self._history = jax.tree_map(np.asarray, self._history)
         self.history = stack_sequence_fields(self._history)
 
-
-
-
-
-    def _update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
-        (alpha_2_loss, (log_w, log_q_x)), grads = jax.value_and_grad(self._alpha_2_fab_loss,
+    @partial(jax.jit, static_argnums=0)
+    def update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
+        (alpha_2_loss, (log_w, log_q_x, log_p_x)), grads = jax.value_and_grad(
+            self._alpha_2_fab_loss,
                                                                   argnums=2, has_aux=True)(
-            x_AIS, log_w_AIS, self.learnt_distribution_params
+            x_AIS, log_w_AIS, learnt_distribution_params
         )
         updates, new_opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
-        info = self.get_info(x_AIS, log_w_AIS, log_w, log_q_x)
+        info = self.get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss)
         return learnt_distribution_params, opt_state, info
 
 
@@ -86,16 +83,19 @@ class AgentFAB:
         # remove nans and infs by making them carry very little wait inside the exp
         # https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#nan_to_num
         neg_inf = -100.0
-        b = jnp.where((log_w == neg_inf) | (log_w_AIS == neg_inf), 0.0, 1.0)
         log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
-        log_w_AIS_normed = log_w_AIS - jax.nn.logsumexp(log_w_AIS)
         log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
-        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS_normed, b=b)
+        b = jnp.where((log_w == neg_inf) | (log_w_AIS == neg_inf), 0.0, 1.0)
+        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS, b=b)
         alpha_2_loss = jnp.clip(alpha_2_loss, a_max=1000, a_min=-1000)
-        return alpha_2_loss, (log_w, log_q_x)
+        return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
-    def get_info(self, x_AIS, log_w_AIS, log_w, log_q_x):
+    @staticmethod
+    def get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss):
         info = {}
         ESS = effective_sample_size_from_unnormalised_log_weights(log_w_AIS)
-        info.update(effective_sample_size=ESS)
+        mean_log_p_x = jnp.mean(log_p_x)
+        info.update(effective_sample_size=ESS,
+                    loss=alpha_2_loss,
+                    mean_log_p_x=mean_log_p_x)
         return info
