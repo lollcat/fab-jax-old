@@ -4,6 +4,17 @@ import jax.numpy as jnp
 import matplotlib as mpl
 import itertools
 
+def plot_history(history):
+    figure, axs = plt.subplots(len(history), 1, figsize=(7, 3*len(history.keys())))
+    for i, key in enumerate(history):
+        if len(history) == 1:
+            ax = axs
+        else:
+            ax = axs[i]
+        ax.plot(history[key])
+        ax.set_title(key)
+    plt.tight_layout()
+
 def plot_3D(x, z, n, ax, title=None):
     x1 = x[:, 0].reshape(n, n)
     x2 = x[:, 1].reshape(n, n)

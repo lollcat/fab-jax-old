@@ -1,11 +1,13 @@
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 import jax.numpy as jnp
-from functools import partial
 from fab.types import TargetLogProbFunc, HaikuDistribution
 import haiku as hk
+import numpy as np
 import jax
 import optax
 from tqdm import tqdm
+from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
+from fab.utils.tree_utils import stack_sequence_fields
 jax.config.update("jax_enable_x64", True)
 
 
@@ -15,11 +17,11 @@ class AgentFAB:
                  learnt_distribution: HaikuDistribution,
                  target_log_prob: TargetLogProbFunc,
                  batch_size: int,
-                 n_iter : int,
+                 n_iter: int,
                  n_intermediate_distributions: int = 3,
                  AIS_kwargs = None,
-                 seed = 0,
-                 lr = 1e-3,
+                 seed: int = 0,
+                 lr: float = 1e-3,
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
@@ -41,6 +43,7 @@ class AgentFAB:
             optax.scale(-lr))
         self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
         self.update = jax.jit(self._update)
+        self._history = []
 
 
 
@@ -49,11 +52,14 @@ class AgentFAB:
         for i in pbar:
             x_AIS, log_w_AIS = self.annealed_importance_sampler.run(next(self.rng),
                                                                     self.learnt_distribution_params)
-            learnt_distribution_params, opt_state, (log_w, log_q_x) = \
+            self.learnt_distribution_params, self.optimizer_state, info = \
                 self.update(x_AIS, log_w_AIS, self.learnt_distribution_params,
                             self.optimizer_state)
-            self.learnt_distribution_params, self.optimizer_state = learnt_distribution_params, \
-                                                                    opt_state
+            self._history.append(info)
+        self._history = jax.tree_map(np.asarray, self._history)
+        self.history = stack_sequence_fields(self._history)
+
+
 
 
 
@@ -65,7 +71,8 @@ class AgentFAB:
         updates, new_opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
-        return learnt_distribution_params, opt_state, (log_w, log_q_x)
+        info = self.get_info(x_AIS, log_w_AIS, log_w, log_q_x)
+        return learnt_distribution_params, opt_state, info
 
 
     def _alpha_2_fab_loss(self, x_samples, log_w_AIS, learnt_distribution_params):
@@ -86,3 +93,9 @@ class AgentFAB:
         alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS_normed, b=b)
         alpha_2_loss = jnp.clip(alpha_2_loss, a_max=1000, a_min=-1000)
         return alpha_2_loss, (log_w, log_q_x)
+
+    def get_info(self, x_AIS, log_w_AIS, log_w, log_q_x):
+        info = {}
+        ESS = effective_sample_size_from_unnormalised_log_weights(log_w_AIS)
+        info.update(effective_sample_size=ESS)
+        return info
