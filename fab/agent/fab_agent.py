@@ -37,11 +37,12 @@ class AgentFAB:
         dummy_x = jnp.zeros((batch_size, learnt_distribution.dim))
         self.learnt_distribution_params = self.learnt_distribution.log_prob.init(next(self.rng),
                                                                                  dummy_x)
-        self.optimizer = optax.chain(
-            optax.clip(1.0),
-            optax.clip_by_global_norm(1.0),
-            optax.scale_by_adam(),
-            optax.scale(-lr))
+        self.optimizer = optax.adam(lr)
+        # self.optimizer = optax.chain(
+        #     optax.clip(1.0),
+        #     optax.clip_by_global_norm(1.0),
+        #     optax.scale_by_adam(),
+        #     optax.scale(-lr))
         self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
         self._history = []
 

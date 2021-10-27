@@ -1,5 +1,5 @@
 from absl.testing import absltest
-from fab.learnt_distributions.distrax_flo import make_rational_quadratic_spline_dist_funcs
+from fab.learnt_distributions.distrax_spline_flo import make_rational_quadratic_spline_dist_funcs
 from fab.target_distributions.double_well import DoubleWellEnergy
 from fab.agent.fab_agent import AgentFAB
 from fab.utils.plotting import plot_history

@@ -1,6 +1,6 @@
 import jax.random
 from absl.testing import absltest
-from distrax_flo import make_rational_quadratic_spline_dist_funcs
+from distrax_spline_flo import make_rational_quadratic_spline_dist_funcs
 import jax.numpy as jnp
 import chex
 import haiku as hk
