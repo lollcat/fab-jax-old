@@ -22,7 +22,7 @@ class AgentFAB:
                  n_intermediate_distributions: int = 3,
                  AIS_kwargs = None,
                  seed: int = 0,
-                 lr: float = 2e-4
+                 lr: float = 1e-4
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob

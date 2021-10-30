@@ -1,6 +1,9 @@
 # see https://github.com/deepmind/distrax/blob/master/examples/flow.py
 
 from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple, Union
+
+import jax.nn
+
 from fab.types import XPoints, LogProbs, HaikuDistribution
 
 import distrax
@@ -17,14 +20,15 @@ PRNGKey = chex.PRNGKey
 
 def make_realnvp_dist_funcs(
         x_ndim: int, flow_num_layers: int = 8,
-                 mlp_hidden_size_per_x_dim: int = 2,  mlp_num_layers: int = 2):
+                 mlp_hidden_size_per_x_dim: int = 2,  mlp_num_layers: int = 2, use_exp=False):
         event_shape = (x_ndim,)  # is more general in jax example but here assume x is vector
         n_hidden_units = np.prod(event_shape) * mlp_hidden_size_per_x_dim
 
         get_model = lambda: make_flow_model(
                 event_shape=event_shape,
                 num_layers=flow_num_layers,
-                hidden_sizes=[n_hidden_units] * mlp_num_layers)
+                hidden_sizes=[n_hidden_units] * mlp_num_layers,
+                use_exp=use_exp)
 
         # TODO: may want to add nan checks to sample, and sample_and_log_prob (as this seems to
         #  sometimes occur with
@@ -74,15 +78,23 @@ def make_conditioner(event_shape: Sequence[int],
 
 def make_flow_model(event_shape: Sequence[int],
                     num_layers: int,
-                    hidden_sizes: Sequence[int]) -> distrax.Transformed:
+                    hidden_sizes: Sequence[int],
+                    use_exp: bool) -> distrax.Transformed:
     """Creates the flow model."""
 
     def bijector_fn(params: jnp.ndarray):
       """scalar affine function"""
-      shift, log_scale = jnp.split(params, indices_or_sections=2, axis=-1)
-      shift = jnp.squeeze(shift, axis=-1)
-      log_scale = jnp.squeeze(log_scale, axis=-1)
-      return distrax.ScalarAffine(shift=shift, log_scale=log_scale)
+      if use_exp:
+          shift, log_scale = jnp.split(params, indices_or_sections=2, axis=-1)
+          shift = jnp.squeeze(shift, axis=-1)
+          log_scale = jnp.squeeze(log_scale, axis=-1)
+          return distrax.ScalarAffine(shift=shift, log_scale=log_scale)
+      else:
+          shift, pre_activate_scale = jnp.split(params, indices_or_sections=2, axis=-1)
+          shift = jnp.squeeze(shift, axis=-1)
+          scale = jnp.squeeze(jax.nn.softplus(pre_activate_scale), axis=-1)
+          return distrax.ScalarAffine(shift=shift, scale=scale)
+
 
     # Number of parameters for the rational-quadratic spline:
     # - `num_bins` bin widths
