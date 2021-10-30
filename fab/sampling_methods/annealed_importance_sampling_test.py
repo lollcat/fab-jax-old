@@ -2,7 +2,7 @@ from absl.testing import absltest
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.learnt_distributions.distrax_spline_flo import make_rational_quadratic_spline_dist_funcs
 from fab.learnt_distributions.distrax_realNVP_flo import make_realnvp_dist_funcs
-from fab.target_distributions.double_well import DoubleWellEnergy
+from fab.target_distributions.many_well import ManyWellEnergy
 import distrax
 import jax.numpy as jnp
 import haiku as hk
@@ -11,13 +11,13 @@ import chex
 
 
 class Test_HMC(absltest.TestCase):
-    x_ndim = 2
+    x_ndim = 4
     flow_num_layers = 2
 
     # flow_haiku_dist = make_rational_quadratic_spline_dist_funcs(
     #     x_ndim=x_ndim, flow_num_layers=flow_num_layers)
     flow_haiku_dist = make_realnvp_dist_funcs(x_ndim=x_ndim, flow_num_layers=flow_num_layers)
-    target_log_prob = DoubleWellEnergy(dim=x_ndim).log_prob
+    target_log_prob = ManyWellEnergy(dim=x_ndim).log_prob
     n_parallel_runs = 12
     n_intermediate_distributions = 5
     AIS = AnnealedImportanceSampler(

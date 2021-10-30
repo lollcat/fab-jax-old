@@ -13,8 +13,8 @@ class UnitTests(absltest.TestCase):
     def test_realNVP(self):
         rng = hk.PRNGSequence(0)
         batch_size = 7
-        x_n_elements = 3
-        flow_num_layers = 2
+        x_n_elements = 16
+        flow_num_layers = 4
         realNVP_haiku_dist = make_realnvp_dist_funcs(
             x_ndim=x_n_elements, flow_num_layers=flow_num_layers)
         x = jnp.zeros((batch_size, x_n_elements))
