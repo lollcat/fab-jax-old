@@ -5,6 +5,7 @@ from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple, Union
 import jax.nn
 
 from fab.types import XPoints, LogProbs, HaikuDistribution
+from fab.utils.networks import LayerNormMLP
 
 import distrax
 import chex
@@ -65,7 +66,7 @@ def make_conditioner(event_shape: Sequence[int],
   """Creates an MLP conditioner for each layer of the flow."""
   return hk.Sequential([
       hk.Flatten(preserve_dims=-len(event_shape)),
-      hk.nets.MLP(hidden_sizes, activate_final=True),
+      LayerNormMLP(hidden_sizes, activate_final=True),
       # We initialize this linear layer to zero so that the flow is initialized
       # to the identity function.
       hk.Linear(
