@@ -39,6 +39,7 @@ class AgentFAB:
                                                                                  dummy_x)
         # self.optimizer = optax.adam(lr)
         self.optimizer = optax.chain(
+            optax.zero_nans(),
             optax.clip(1.0),
             optax.clip_by_global_norm(1.0),
             optax.scale_by_adam(),
