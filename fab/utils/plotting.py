@@ -16,9 +16,11 @@ def plot_history(history):
             ax = axs[i]
         data = history[key].squeeze()
         if len(data.shape) == 3:
-            data_split = np.split(data, indices_or_sections=data.shape[1], axis=1)
+            split_axis = 1
+            data_split = np.split(data, indices_or_sections=data.shape[1],
+                                  axis=split_axis)
             for i, data_chunk in enumerate(data_split):
-                ax.plot(data_chunk, alpha=0.4)
+                ax.plot(data_chunk.squeeze(split_axis), alpha=0.4)
                 ax.set_title(key + f"axis1_element{i}")
         else:
             assert len(data.shape) < 3

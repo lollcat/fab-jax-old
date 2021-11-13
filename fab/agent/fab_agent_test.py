@@ -16,7 +16,7 @@ class Test_AgentFAB(absltest.TestCase):
     target_log_prob = DoubleWellEnergy(dim=dim).log_prob
     batch_size = 8
     n_iter = 10000
-    n_intermediate_distributions: int = 3
+    n_intermediate_distributions: int = 4
     AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
 
     fab_agent = AgentFAB(learnt_distribution=real_nvp_flo,

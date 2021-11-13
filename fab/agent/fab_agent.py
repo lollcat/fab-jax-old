@@ -1,7 +1,9 @@
+from typing import Optional
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 import jax.numpy as jnp
 from fab.types import TargetLogProbFunc, HaikuDistribution
 import haiku as hk
+
 from functools import partial
 import numpy as np
 import jax
@@ -10,6 +12,14 @@ from tqdm import tqdm
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 from fab.utils.tree_utils import stack_sequence_fields
 jax.config.update("jax_enable_x64", True)
+
+_DEFAULT_LR = 1e-4
+_DEFAULT_OPTIMIZER = optax.chain(
+                optax.zero_nans(),
+                optax.clip(1.0),
+                optax.clip_by_global_norm(1.0),
+                optax.scale_by_adam(),
+                optax.scale(-_DEFAULT_LR))
 
 
 class AgentFAB:
@@ -22,7 +32,7 @@ class AgentFAB:
                  n_intermediate_distributions: int = 3,
                  AIS_kwargs = None,
                  seed: int = 0,
-                 lr: float = 1e-4
+                 optimizer: optax.GradientTransformation = _DEFAULT_OPTIMIZER
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
@@ -37,13 +47,7 @@ class AgentFAB:
         dummy_x = jnp.zeros((batch_size, learnt_distribution.dim))
         self.learnt_distribution_params = self.learnt_distribution.log_prob.init(next(self.rng),
                                                                                  dummy_x)
-        # self.optimizer = optax.adam(lr)
-        self.optimizer = optax.chain(
-            optax.zero_nans(),
-            optax.clip(1.0),
-            optax.clip_by_global_norm(1.0),
-            optax.scale_by_adam(),
-            optax.scale(-lr))
+        self.optimizer = optimizer
         self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
         self._history = []
 
