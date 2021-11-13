@@ -38,7 +38,7 @@ class AnnealedImportanceSampler:
         x_new, log_w, transition_operator_state, aux_info = \
             self._run(key, learnt_distribution_params, self.transition_operator_state)
         self.transition_operator_state = transition_operator_state
-        return x_new, log_w
+        return x_new, log_w, aux_info
 
 
     @partial(jax.jit, static_argnums=(0,))

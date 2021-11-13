@@ -35,8 +35,6 @@ class Info(NamedTuple):
 
 
 
-
-
 class HamiltoneanMonteCarlo:
     def __init__(self, dim, n_intermediate_distributions, intermediate_target_log_prob_fn,
                  batch_size, step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
@@ -220,8 +218,8 @@ class HamiltoneanMonteCarlo:
     def update_step_size_p_accept(self, step_size_params,
                               average_acceptance_probabilities_per_outer_loop, i):
         multiplying_factor = jnp.where(average_acceptance_probabilities_per_outer_loop >
-                                  self.target_p_accept, jnp.array(1.1),
-                                       jnp.array(1.0)/1.1
+                                  self.target_p_accept, jnp.array(1.05),
+                                       jnp.array(1.0)/1.05
                                   )
         chex.assert_equal_shape([step_size_params[i], multiplying_factor])
         step_size_params = \

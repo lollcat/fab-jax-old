@@ -51,14 +51,18 @@ class AgentFAB:
     def run(self):
         pbar = tqdm(range(self.n_iter))
         for i in pbar:
-            x_AIS, log_w_AIS = self.annealed_importance_sampler.run(next(self.rng),
+            x_AIS, log_w_AIS, ais_info = self.annealed_importance_sampler.run(next(self.rng),
                                                                     self.learnt_distribution_params)
             self.learnt_distribution_params, self.optimizer_state, info = \
                 self.update(x_AIS, log_w_AIS, self.learnt_distribution_params,
                             self.optimizer_state)
+            info.update(ais_info)
             self._history.append(info)
-        self._history = jax.tree_map(np.asarray, self._history)
-        self.history = stack_sequence_fields(self._history)
+
+    @property
+    def history(self):
+        return stack_sequence_fields(jax.tree_map(np.asarray, self._history))
+
 
     @partial(jax.jit, static_argnums=0)
     def update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
@@ -82,14 +86,11 @@ class AgentFAB:
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
-        # remove nans and infs by making them carry very little wait inside the exp
-        # https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#nan_to_num
-        neg_inf = -100.0
+        # remove nans by making them carry 0 value in logsumexp (by setting them equal to neginf).
+        neg_inf = -float("inf")
         log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
         log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
-        b = jnp.where((log_w == neg_inf) | (log_w_AIS == neg_inf), 0.0, 1.0)
-        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS, b=b)
-        alpha_2_loss = jnp.clip(alpha_2_loss, a_max=1000, a_min=-1000)
+        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
     @staticmethod

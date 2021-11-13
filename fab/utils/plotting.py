@@ -5,14 +5,25 @@ import matplotlib as mpl
 import itertools
 
 def plot_history(history):
+    """
+    Rudimentary plotting for history where we plot everything given.
+    """
     figure, axs = plt.subplots(len(history), 1, figsize=(7, 3*len(history.keys())))
     for i, key in enumerate(history):
         if len(history) == 1:
             ax = axs
         else:
             ax = axs[i]
-        ax.plot(history[key])
-        ax.set_title(key)
+        data = history[key].squeeze()
+        if len(data.shape) == 3:
+            data_split = np.split(data, indices_or_sections=data.shape[1], axis=1)
+            for i, data_chunk in enumerate(data_split):
+                ax.plot(data_chunk, alpha=0.4)
+                ax.set_title(key + f"axis1_element{i}")
+        else:
+            assert len(data.shape) < 3
+            ax.plot(data)
+            ax.set_title(key)
     plt.tight_layout()
 
 def plot_3D(x, z, n, ax, title=None):
