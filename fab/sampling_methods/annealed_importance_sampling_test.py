@@ -19,12 +19,12 @@ class Test_HMC(absltest.TestCase):
     flow_haiku_dist = make_realnvp_dist_funcs(x_ndim=x_ndim, flow_num_layers=flow_num_layers)
     target_log_prob = ManyWellEnergy(dim=x_ndim).log_prob
     n_parallel_runs = 12
-    n_intermediate_distributions = 5
+    n_intermediate_distributions = 2
     AIS = AnnealedImportanceSampler(
-                 learnt_distribution = flow_haiku_dist,
-                 target_log_prob = target_log_prob,
-                 n_parallel_runs = n_parallel_runs,
-                 n_intermediate_distributions = n_intermediate_distributions)
+                 learnt_distribution=flow_haiku_dist,
+                 target_log_prob=target_log_prob,
+                 n_parallel_runs=n_parallel_runs,
+                 n_intermediate_distributions=n_intermediate_distributions)
     rng = hk.PRNGSequence(0)
     x = jnp.zeros((n_parallel_runs, x_ndim))
     init_learnt_distribution_params = flow_haiku_dist.log_prob.init(next(rng), x)

@@ -1,21 +1,19 @@
 import jax.numpy as jnp
-import numpy as np
 from fab.types import TargetLogProbFunc, HaikuDistribution
 import jax
 from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
 from functools import partial
 
-# TODO: set n_intermediate distributions to make more sense (0 means IS)
+
 class AnnealedImportanceSampler:
     def __init__(self,
                  learnt_distribution: HaikuDistribution,
                  target_log_prob: TargetLogProbFunc,
                  n_parallel_runs: int,
-                 n_intermediate_distributions: int = 3,
+                 n_intermediate_distributions: int = 1,
                  transition_operator_type="HMC",
                  additional_transition_operator_kwargs={},
-                 distribution_spacing_type: str = "linear",
-                 Beta_end: float=1.0):
+                 distribution_spacing_type: str = "linear"):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
         if transition_operator_type == "HMC":
@@ -28,7 +26,6 @@ class AnnealedImportanceSampler:
         self.n_parallel_runs = n_parallel_runs
         self.n_intermediate_distributions = n_intermediate_distributions
         self.distribution_spacing_type = distribution_spacing_type
-        self.Beta_end = Beta_end
         self.setup_n_distributions()
         # we manage the mcmc params within this class
         # initialise HMC param class
@@ -49,13 +46,12 @@ class AnnealedImportanceSampler:
             learnt_distribution_params, seed=subkey, sample_shape=(self.n_parallel_runs,))
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, 
                                                                 x_new, 1) - log_prob_p0
-        j_s = jnp.arange(1, self.n_intermediate_distributions-1)
-        keys = jax.random.split(key, self.n_intermediate_distributions-2)
+        j_s = jnp.arange(1, self.n_intermediate_distributions+1)
+        keys = jax.random.split(key, self.n_intermediate_distributions)
         xs = (keys, j_s)
         inner_loop_func = partial(self.inner_loop_func, learnt_distribution_params)
         (x_new, log_w, transition_operator_state), aux_info = \
-            jax.lax.scan(inner_loop_func, init=(x_new, log_w, transition_operator_state),
-                         xs=xs)
+            jax.lax.scan(inner_loop_func, init=(x_new, log_w, transition_operator_state), xs=xs)
         return x_new, log_w, transition_operator_state, aux_info
 
     def inner_loop_func(self, learnt_distribution_params, carry, xs):
@@ -91,34 +87,20 @@ class AnnealedImportanceSampler:
 
 
     def setup_n_distributions(self):
-        if self.n_intermediate_distributions == 0:
-            print("running without any intermediate distributions")
-            intermediate_B_space = []  # no intermediate B space
+        assert self.n_intermediate_distributions > 0
+        if self.n_intermediate_distributions < 3:
+            print(f"using linear spacing as there is {self.n_intermediate_distributions}"
+                  f"intermediate distribution")
+            self.distribution_spacing_type = "linear"
+        if self.distribution_spacing_type == "geometric":
+            # rough heuristic, copying ratio used in example in AIS paper
+            n_linspace_points = max(int(self.n_intermediate_distributions / 5), 2)
+            n_geomspace_points = self.n_intermediate_distributions - n_linspace_points
+            self.B_space = jnp.concatenate([jnp.linspace(0, 0.1, n_linspace_points + 1)[:-1],
+                                   jnp.geomspace(0.1, 1, n_geomspace_points)])
+        elif self.distribution_spacing_type == "linear":
+            self.B_space = jnp.linspace(0.0, 1.0, self.n_intermediate_distributions+2)
         else:
-            if self.n_intermediate_distributions == 3:
-                print("using linear spacing as there is only 1 intermediate distribution")
-                intermediate_B_space = [0.5 * self.Beta_end]  # aim half way
-            else:
-                if self.distribution_spacing_type == "geometric":
-                    n_linspace_points = max(int(self.n_intermediate_distributions / 5),
-                                            2)  # rough heuristic, copying ratio used in example in AIS paper
-                    n_geomspace_points = self.n_intermediate_distributions - n_linspace_points
-                    intermediate_B_space = list(
-                        np.linspace(0, 0.1, n_linspace_points + 1)[1:-1] * self.Beta_end) \
-                                           + \
-                                           list(np.geomspace(0.1, 1,
-                                                             n_geomspace_points) * self.Beta_end)[
-                                           :-1]
-                elif self.distribution_spacing_type == "linear":
-                    intermediate_B_space = list(np.linspace(0.0, 1.0,
-                                                            self.n_intermediate_distributions)[
-                                                1:-1] * self.Beta_end)
-                else:
-                    raise Exception(f"distribution spacing incorrectly specified:"
-                                    f" '{self.distribution_spacing_type}',"
-                                    f"options are 'geometric' or 'linear'")
-        self.B_space = jnp.array([0.0] + intermediate_B_space + [1.0])  # we always start and end
-        # with 0 and 1
-
-
-
+            raise Exception(f"distribution spacing incorrectly specified:"
+                            f" '{self.distribution_spacing_type}',"
+                            f"options are 'geometric' or 'linear'")

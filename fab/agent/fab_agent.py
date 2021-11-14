@@ -13,14 +13,6 @@ from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_lo
 from fab.utils.tree_utils import stack_sequence_fields
 jax.config.update("jax_enable_x64", True)
 
-_DEFAULT_LR = 1e-4
-_DEFAULT_OPTIMIZER = optax.chain(
-                optax.zero_nans(),
-                optax.clip(1.0),
-                optax.clip_by_global_norm(1.0),
-                optax.scale_by_adam(),
-                optax.scale(-_DEFAULT_LR))
-
 
 class AgentFAB:
     """Flow Annealed Importance Sampling Bootstrap Agent"""
@@ -29,10 +21,10 @@ class AgentFAB:
                  target_log_prob: TargetLogProbFunc,
                  batch_size: int,
                  n_iter: int,
-                 n_intermediate_distributions: int = 3,
+                 n_intermediate_distributions: int = 2,
                  AIS_kwargs = None,
                  seed: int = 0,
-                 optimizer: optax.GradientTransformation = _DEFAULT_OPTIMIZER
+                 optimizer: optax.GradientTransformation = optax.adam(1e-4)
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
