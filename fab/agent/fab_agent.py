@@ -79,7 +79,7 @@ class AgentFAB:
         alpha = 2.0
         x_samples = jax.lax.stop_gradient(x_samples)
         log_w_AIS = jax.lax.stop_gradient(log_w_AIS)
-        log_w_AIS_normalised = log_w_AIS - jax.nn.logsumexp(log_w_AIS)
+
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
@@ -87,6 +87,7 @@ class AgentFAB:
         neg_inf = -float("inf")
         log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
         log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
+        log_w_AIS_normalised = log_w_AIS - jax.nn.logsumexp(log_w_AIS)
         alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS_normalised)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
