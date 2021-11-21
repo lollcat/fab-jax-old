@@ -1,4 +1,3 @@
-from typing import Optional
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 import jax.numpy as jnp
 from fab.types import TargetLogProbFunc, HaikuDistribution
@@ -63,7 +62,7 @@ class AgentFAB:
     @partial(jax.jit, static_argnums=0)
     def update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
         (alpha_2_loss, (log_w, log_q_x, log_p_x)), grads = jax.value_and_grad(
-            self._alpha_2_fab_loss,
+            self.loss,
                                                                   argnums=2, has_aux=True)(
             x_AIS, log_w_AIS, learnt_distribution_params
         )
@@ -74,11 +73,13 @@ class AgentFAB:
         return learnt_distribution_params, opt_state, info
 
 
-    def _alpha_2_fab_loss(self, x_samples, log_w_AIS, learnt_distribution_params):
+    def loss(self, x_samples, log_w_AIS, learnt_distribution_params):
+        """Minimise upper bound of $\alpha$-divergence with $\alpha=2$."""
         # alpha divergence, alpha = 2
         alpha = 2.0
         x_samples = jax.lax.stop_gradient(x_samples)
         log_w_AIS = jax.lax.stop_gradient(log_w_AIS)
+        log_w_AIS_normalised = log_w_AIS - jax.nn.logsumexp(log_w_AIS)
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
@@ -86,7 +87,7 @@ class AgentFAB:
         neg_inf = -float("inf")
         log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
         log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
-        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS)
+        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS_normalised)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
     @staticmethod
