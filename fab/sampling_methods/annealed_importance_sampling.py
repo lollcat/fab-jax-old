@@ -43,7 +43,7 @@ class AnnealedImportanceSampler:
         key, subkey = jax.random.split(key, 2)
         log_w = jnp.zeros(self.n_parallel_runs)  # log importance weight
         x_new, log_prob_p0 = self.learnt_distribution.sample_and_log_prob.apply(
-            learnt_distribution_params, seed=subkey, sample_shape=(self.n_parallel_runs,))
+            learnt_distribution_params, rng=subkey, sample_shape=(self.n_parallel_runs,))
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, 
                                                                 x_new, 1) - log_prob_p0
         j_s = jnp.arange(1, self.n_intermediate_distributions+1)

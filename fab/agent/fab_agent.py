@@ -53,6 +53,8 @@ class AgentFAB:
                             self.optimizer_state)
             info.update(ais_info)
             self._history.append(info)
+            if i % 100:
+                pbar.set_description(f"ESS: {info['effective_sample_size']}")
 
     @property
     def history(self):
@@ -75,8 +77,6 @@ class AgentFAB:
 
     def loss(self, x_samples, log_w_AIS, learnt_distribution_params):
         """Minimise upper bound of $\alpha$-divergence with $\alpha=2$."""
-        # alpha divergence, alpha = 2
-        alpha = 2.0
         x_samples = jax.lax.stop_gradient(x_samples)
         log_w_AIS = jax.lax.stop_gradient(log_w_AIS)
 
@@ -87,8 +87,7 @@ class AgentFAB:
         neg_inf = -float("inf")
         log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
         log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
-        log_w_AIS_normalised = log_w_AIS - jax.nn.logsumexp(log_w_AIS)
-        alpha_2_loss = jax.nn.logsumexp((alpha - 1) * log_w + log_w_AIS_normalised)
+        alpha_2_loss = jax.nn.logsumexp(log_w + log_w_AIS)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
     @staticmethod

@@ -40,19 +40,17 @@ def make_realnvp_dist_funcs(
             model = get_model()
             return model.log_prob(data)
 
-        @hk.without_apply_rng
         @hk.transform
-        def sample_and_log_prob(seed: PRNGKey, sample_shape: Tuple = ()) \
+        def sample_and_log_prob(sample_shape: Tuple = ()) \
                 -> Tuple[XPoints, LogProbs]:
             model = get_model()
-            return model.sample_and_log_prob(seed=seed, sample_shape=sample_shape)
+            return model.sample_and_log_prob(seed=hk.next_rng_key(), sample_shape=sample_shape)
 
 
-        @hk.without_apply_rng
         @hk.transform
-        def sample(seed: PRNGKey, sample_shape: Tuple = ()) -> XPoints:
+        def sample(sample_shape: Tuple = ()) -> XPoints:
             model = get_model()
-            return model.sample(seed=seed, sample_shape=sample_shape)
+            return model.sample(seed=hk.next_rng_key(), sample_shape=sample_shape)
 
         return HaikuDistribution(x_ndim, log_prob, sample_and_log_prob, sample)
 

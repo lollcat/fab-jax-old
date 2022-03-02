@@ -14,7 +14,6 @@ PRNGKey = chex.PRNGKey
 
 
 
-
 def make_rational_quadratic_spline_dist_funcs(
         x_ndim: int, flow_num_layers: int = 8,
                  mlp_hidden_size_per_x_dim: int = 2,  mlp_num_layers: int = 2, spline_num_bins:

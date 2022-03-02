@@ -1,3 +1,5 @@
+from typing import Optional, Tuple
+import chex
 import matplotlib.pyplot as plt
 import numpy as np
 import jax.numpy as jnp
@@ -39,7 +41,7 @@ def plot_3D(x, z, n, ax, title=None):
     if title is not None:
         ax.set_title(title)
 
-def plot_contours(log_prob_func, bound=3):
+def plot_contours_3D(log_prob_func, bound=3):
     n_points = 200
     x_points_dim1 = np.linspace(-bound, bound, n_points)
     x_points_dim2 = np.linspace(-bound, bound, n_points)
@@ -51,7 +53,12 @@ def plot_contours(log_prob_func, bound=3):
     plot_3D(x_points, np.exp(log_probs), n_points, ax, title="log p(x)")
     plt.show()
 
-def plot_contours_2D(log_prob_func, bound=3):
+def plot_contours_2D(log_prob_func,
+                     ax: Optional[plt.Axes] = None,
+                     bound=3, levels=20):
+    """Plot the contours of a 2D log prob function."""
+    if not ax:
+        fig, ax = plt.subplots(1)
     n_points = 200
     x_points_dim1 = np.linspace(-bound, bound, n_points)
     x_points_dim2 = np.linspace(-bound, bound, n_points)
@@ -61,4 +68,15 @@ def plot_contours_2D(log_prob_func, bound=3):
     x1 = x_points[:, 0].reshape(n_points, n_points)
     x2 = x_points[:, 1].reshape(n_points, n_points)
     z = log_probs.reshape(n_points, n_points)
-    plt.contour(x1, x2, z, levels=20)
+    ax.contour(x1, x2, z, levels=levels)
+
+
+def plot_marginal_pair(samples: chex.Array,
+                  ax: Optional[plt.Axes] = None,
+                  marginal_dims: Tuple[int, int] = (0, 1),
+                  bounds: Tuple[int, int] = (-5, 5),):
+    """Plot samples from marginal of distribution for a given pair of dimensions."""
+    if not ax:
+        fig, ax = plt.subplots(1)
+    samples = jnp.clip(samples, bounds[0], bounds[1])
+    ax.plot(samples[:, marginal_dims[0]], samples[:, marginal_dims[1]], "o", alpha=0.5)
