@@ -1,0 +1,1 @@
+from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
