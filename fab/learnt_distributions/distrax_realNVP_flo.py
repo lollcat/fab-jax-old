@@ -31,9 +31,6 @@ def make_realnvp_dist_funcs(
                 hidden_sizes=[n_hidden_units] * mlp_num_layers,
                 use_exp=use_exp)
 
-        # TODO: may want to add nan checks to sample, and sample_and_log_prob (as this seems to
-        #  sometimes occur with
-        #  flow models)
         @hk.without_apply_rng
         @hk.transform
         def log_prob(data: XPoints) -> LogProbs:
