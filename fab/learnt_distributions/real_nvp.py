@@ -110,6 +110,18 @@ def make_scalar_affine_bijector(use_exp: bool = True):
     return bijector_fn
 
 
+def make_gaussian_base_dist(event_shape):
+    loc = hk.get_parameter("loc", shape=event_shape, init=jnp.zeros)
+    log_scale = hk.get_parameter("log_scale", shape=event_shape, init=jnp.zeros)
+    scale = jnp.exp(log_scale)
+    base_dist = distrax.Independent(
+        distrax.Normal(
+            loc=loc,
+            scale=scale),
+        reinterpreted_batch_ndims=len(event_shape))
+    return base_dist
+
+
 def make_flow_model(event_shape: Sequence[int],
                     num_layers: int,
                     hidden_sizes: Sequence[int],
@@ -147,11 +159,6 @@ def make_flow_model(event_shape: Sequence[int],
 
     # We invert the flow so that the `forward` method is called with `log_prob`.
     flow = distrax.Inverse(distrax.Chain(layers))
-    base_distribution = distrax.Independent(
-      distrax.Normal(
-          loc=jnp.zeros(event_shape),
-          scale=jnp.ones(event_shape)),
-      reinterpreted_batch_ndims=len(event_shape))
-
+    base_distribution = make_gaussian_base_dist(event_shape)
     return distrax.Transformed(base_distribution, flow)
 
