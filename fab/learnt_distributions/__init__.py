@@ -1,1 +1,1 @@
-from fab.learnt_distributions.distrax_realNVP_flo import make_realnvp_dist_funcs
+from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs

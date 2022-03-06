@@ -4,14 +4,15 @@ from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple, Union
 
 import jax.nn
 
-from fab.types import XPoints, LogProbs, HaikuDistribution
-from fab.utils.networks import LayerNormMLP
-
 import distrax
 import chex
 import haiku as hk
 import jax.numpy as jnp
 import numpy as np
+
+from fab.types import XPoints, LogProbs, HaikuDistribution
+from fab.utils.networks import LayerNormMLP
+from fab.learnt_distributions.act_norm import ActNormBijector
 
 
 PRNGKey = chex.PRNGKey
@@ -20,8 +21,15 @@ PRNGKey = chex.PRNGKey
 
 
 def make_realnvp_dist_funcs(
-        x_ndim: int, flow_num_layers: int = 8,
-                 mlp_hidden_size_per_x_dim: int = 2,  mlp_num_layers: int = 2, use_exp=False):
+        x_ndim: int,
+        flow_num_layers: int = 8,
+        mlp_hidden_size_per_x_dim: int = 2,
+        mlp_num_layers: int = 2,
+        use_exp: bool = False,
+        layer_norm: bool = False,
+        act_norm: bool = True,
+):
+
         event_shape = (x_ndim,)  # is more general in jax example but here assume x is vector
         n_hidden_units = np.prod(event_shape) * mlp_hidden_size_per_x_dim
 
@@ -29,7 +37,10 @@ def make_realnvp_dist_funcs(
                 event_shape=event_shape,
                 num_layers=flow_num_layers,
                 hidden_sizes=[n_hidden_units] * mlp_num_layers,
-                use_exp=use_exp)
+                use_exp=use_exp,
+                layer_norm=layer_norm,
+                act_norm=act_norm
+        )
 
         @hk.without_apply_rng
         @hk.transform
@@ -57,11 +68,24 @@ def make_realnvp_dist_funcs(
 
 def make_conditioner(event_shape: Sequence[int],
                      hidden_sizes: Sequence[int],
-                     num_bijector_params = 2) -> hk.Sequential:
-  """Creates an MLP conditioner for each layer of the flow."""
-  return hk.Sequential([
+                     num_bijector_params: int = 2,
+                     layer_norm: bool = False) -> hk.Sequential:
+    """
+    Creates an MLP conditioner for each layer of the flow.
+    Args:
+        event_shape: Input dimension to the conditioner
+        hidden_sizes: MLP hidden layer spec
+        num_bijector_params: Number of bijector params (typically 2, one for scale, one for shift)
+        layer_norm: Whether to use a layer norm MLP instead of a vanilla MLP
+
+    Returns: Haiku moduler used for getting the scale and shift conditioned on half of the
+        RealNVP coupling.
+
+    """
+    mlp = LayerNormMLP if layer_norm else hk.nets.MLP
+    return hk.Sequential([
       hk.Flatten(preserve_dims=-len(event_shape)),
-      LayerNormMLP(hidden_sizes, activate_final=True),
+      mlp(hidden_sizes, activate_final=True),
       # We initialize this linear layer to zero so that the flow is initialized
       # to the identity function.
       hk.Linear(
@@ -69,17 +93,10 @@ def make_conditioner(event_shape: Sequence[int],
           w_init=jnp.zeros,
           b_init=jnp.zeros),
       hk.Reshape(tuple(event_shape) + (num_bijector_params,), preserve_dims=-1),
-  ])
+    ])
 
-
-def make_flow_model(event_shape: Sequence[int],
-                    num_layers: int,
-                    hidden_sizes: Sequence[int],
-                    use_exp: bool) -> distrax.Transformed:
-    """Creates the flow model."""
-
+def make_scalar_affine_bijector(use_exp: bool = True):
     def bijector_fn(params: jnp.ndarray):
-      """scalar affine function"""
       if use_exp:
           shift, log_scale = jnp.split(params, indices_or_sections=2, axis=-1)
           shift = jnp.squeeze(shift, axis=-1)
@@ -90,19 +107,22 @@ def make_flow_model(event_shape: Sequence[int],
           shift = jnp.squeeze(shift, axis=-1)
           scale = jnp.squeeze(jax.nn.softplus(pre_activate_scale), axis=-1)
           return distrax.ScalarAffine(shift=shift, scale=scale)
+    return bijector_fn
 
 
-    # Number of parameters for the rational-quadratic spline:
-    # - `num_bins` bin widths
-    # - `num_bins` bin heights
-    # - `num_bins + 1` knot slopes
-    # for a total of `3 * num_bins + 1` parameters.
-    assert len(event_shape) == 1 # currently only thinking about this case
+def make_flow_model(event_shape: Sequence[int],
+                    num_layers: int,
+                    hidden_sizes: Sequence[int],
+                    use_exp: bool,
+                    layer_norm: bool,
+                    act_norm: bool) -> distrax.Transformed:
+    """Creates the flow model."""
+    assert len(event_shape) == 1  # currently only focusing on this case (all elements in 1 dim).
     event_ndims = len(event_shape)
-
     layers = []
     n_params = np.prod(event_shape)
     split_index = n_params // 2
+    bijector_fn = make_scalar_affine_bijector(use_exp)
     for i in range(num_layers):
         flip = i % 2 == 0
         if flip:
@@ -116,10 +136,14 @@ def make_flow_model(event_shape: Sequence[int],
             split_index=split_index,
             bijector=bijector_fn,
             conditioner=make_conditioner(event_shape=(num_bijector_params,),
-                                         hidden_sizes=hidden_sizes),
+                                         hidden_sizes=hidden_sizes,
+                                         layer_norm=layer_norm),
             event_ndims=event_ndims,
             swap=flip)
         layers.append(layer)
+        if act_norm:
+            act_norm_layer = ActNormBijector(event_shape=event_shape)
+            layers.append(act_norm_layer)
 
     # We invert the flow so that the `forward` method is called with `log_prob`.
     flow = distrax.Inverse(distrax.Chain(layers))

@@ -1,7 +1,7 @@
 import jax.random
 from absl.testing import absltest
 from fab.learnt_distributions.distrax_spline_flo import make_rational_quadratic_spline_dist_funcs
-from fab.learnt_distributions.distrax_realNVP_flo import make_realnvp_dist_funcs
+from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
 from fab.target_distributions.many_well import DoubleWellEnergy
 from fab.agent.fab_agent import AgentFAB
 from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2D
