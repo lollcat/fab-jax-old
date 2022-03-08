@@ -8,7 +8,6 @@ import numpy as np
 import jax
 import optax
 from tqdm import tqdm
-from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 from fab.utils.tree_utils import stack_sequence_fields
 
 
@@ -53,7 +52,7 @@ class AgentFAB:
             info.update(ais_info)
             self._history.append(info)
             if i % 100:
-                pbar.set_description(f"ESS: {info['effective_sample_size']}")
+                pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
 
     @property
     def history(self):
@@ -92,9 +91,9 @@ class AgentFAB:
     @staticmethod
     def get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss):
         info = {}
-        ESS = effective_sample_size_from_unnormalised_log_weights(log_w_AIS)
         mean_log_p_x = jnp.mean(log_p_x)
-        info.update(effective_sample_size=ESS,
-                    loss=alpha_2_loss,
-                    mean_log_p_x=mean_log_p_x)
+        info.update(loss=alpha_2_loss,
+                    mean_log_p_x=mean_log_p_x,
+                    n_non_finite_ais_log_w=jnp.sum(~jnp.isfinite(log_w_AIS)),
+                    n_non_finite_ais_x_samples=jnp.sum(~jnp.isfinite(x_AIS[:, 0])))
         return info

@@ -42,8 +42,8 @@ class Test_AgentFAB(absltest.TestCase):
 
         fig, ax = plt.subplots()
         plot_contours_2D(self.fab_agent.target_log_prob, ax=ax, bound=3, levels=20)
-        samples = self.fab_agent.learnt_distribution.sample(
+        samples = self.fab_agent.learnt_distribution.sample.apply(
             self.fab_agent.learnt_distribution_params,
             jax.random.PRNGKey(0), (500,))
-        plot_marginal_pair(samples)
+        plot_marginal_pair(samples, ax=ax)
         plt.show()

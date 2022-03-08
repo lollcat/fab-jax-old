@@ -1,8 +1,11 @@
 import jax.numpy as jnp
-from fab.types import TargetLogProbFunc, HaikuDistribution
 import jax
-from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
 from functools import partial
+from typing import Dict
+
+from fab.types import TargetLogProbFunc, HaikuDistribution
+from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
+from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 
 
 class AnnealedImportanceSampler:
@@ -42,17 +45,22 @@ class AnnealedImportanceSampler:
     def _run(self, key, learnt_distribution_params, transition_operator_state):
         key, subkey = jax.random.split(key, 2)
         log_w = jnp.zeros(self.n_parallel_runs)  # log importance weight
-        x_new, log_prob_p0 = self.learnt_distribution.sample_and_log_prob.apply(
+        x_base, log_prob_p0 = self.learnt_distribution.sample_and_log_prob.apply(
             learnt_distribution_params, rng=subkey, sample_shape=(self.n_parallel_runs,))
+        x = x_base
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, 
-                                                                x_new, 1) - log_prob_p0
+                                                                x, 1) - log_prob_p0
         j_s = jnp.arange(1, self.n_intermediate_distributions+1)
         keys = jax.random.split(key, self.n_intermediate_distributions)
         xs = (keys, j_s)
         inner_loop_func = partial(self.inner_loop_func, learnt_distribution_params)
-        (x_new, log_w, transition_operator_state), aux_info = \
-            jax.lax.scan(inner_loop_func, init=(x_new, log_w, transition_operator_state), xs=xs)
-        return x_new, log_w, transition_operator_state, aux_info
+        (x, log_w, transition_operator_state), aux_info = \
+            jax.lax.scan(inner_loop_func, init=(x, log_w, transition_operator_state), xs=xs)
+
+        # get more info, such as effective sample size
+        log_w_base = self.target_log_prob(x_base) - log_prob_p0
+        aux_info.update(self.get_info(log_w_ais=log_w, log_w_base=log_w_base))
+        return x, log_w, transition_operator_state, aux_info
 
     def inner_loop_func(self, learnt_distribution_params, carry, xs):
         x_new, log_w, transition_operator_state = carry
@@ -104,3 +112,11 @@ class AnnealedImportanceSampler:
             raise Exception(f"distribution spacing incorrectly specified:"
                             f" '{self.distribution_spacing_type}',"
                             f"options are 'geometric' or 'linear'")
+
+    def get_info(self, log_w_ais: jnp.ndarray, log_w_base: jnp.ndarray) -> Dict[str, jnp.ndarray]:
+        info = {}
+        ess_base = effective_sample_size_from_unnormalised_log_weights(log_w_base)
+        ess_ais = effective_sample_size_from_unnormalised_log_weights(log_w_ais)
+        info.update(ess_ais=ess_ais,
+                    ess_base=ess_base)
+        return info

@@ -38,7 +38,7 @@ class Info(NamedTuple):
 class HamiltoneanMonteCarlo:
     def __init__(self, dim, n_intermediate_distributions, intermediate_target_log_prob_fn,
                  batch_size, step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 initial_step_size: float = 1.0, lr=1e-3):
+                 initial_step_size: float = 1.0, lr=1e-3, max_grad=1e3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.intermediate_target_log_prob_fn = intermediate_target_log_prob_fn
@@ -59,8 +59,8 @@ class HamiltoneanMonteCarlo:
             j = i + 1  # j is loop iter param in annealed_importance_sampling.py
             return - self.intermediate_target_log_prob_fn(learnt_dist_params, q, j)
         def grad_U(learnt_dist_params, q, j):
-            return jnp.clip(jax.grad(U, argnums=1)(learnt_dist_params, q, j), a_min=-100.0,
-                            a_max=100.0)
+            return jnp.clip(jax.grad(U, argnums=1)(learnt_dist_params, q, j), a_min=-max_grad,
+                            a_max=max_grad)
         self.U = U
         self.grad_U = grad_U
 
