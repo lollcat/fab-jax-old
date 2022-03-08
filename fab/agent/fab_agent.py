@@ -10,7 +10,6 @@ import optax
 from tqdm import tqdm
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 from fab.utils.tree_utils import stack_sequence_fields
-jax.config.update("jax_enable_x64", True)
 
 
 class AgentFAB:

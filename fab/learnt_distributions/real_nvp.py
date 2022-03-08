@@ -110,9 +110,9 @@ def make_scalar_affine_bijector(use_exp: bool = True):
     return bijector_fn
 
 
-def make_gaussian_base_dist(event_shape):
-    loc = hk.get_parameter("loc", shape=event_shape, init=jnp.zeros)
-    log_scale = hk.get_parameter("log_scale", shape=event_shape, init=jnp.zeros)
+def make_gaussian_base_dist(event_shape: Sequence[int], dtype: jax.lax.Precision):
+    loc = hk.get_parameter("loc", shape=event_shape, init=jnp.zeros, dtype=dtype)
+    log_scale = hk.get_parameter("log_scale", shape=event_shape, init=jnp.zeros, dtype=dtype)
     scale = jnp.exp(log_scale)
     base_dist = distrax.Independent(
         distrax.Normal(
@@ -129,6 +129,7 @@ def make_flow_model(event_shape: Sequence[int],
                     layer_norm: bool,
                     act_norm: bool) -> distrax.Transformed:
     """Creates the flow model."""
+    dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
     assert len(event_shape) == 1  # currently only focusing on this case (all elements in 1 dim).
     event_ndims = len(event_shape)
     layers = []
@@ -154,11 +155,11 @@ def make_flow_model(event_shape: Sequence[int],
             swap=flip)
         layers.append(layer)
         if act_norm:
-            act_norm_layer = ActNormBijector(event_shape=event_shape)
+            act_norm_layer = ActNormBijector(event_shape=event_shape, dtype=dtype)
             layers.append(act_norm_layer)
 
     # We invert the flow so that the `forward` method is called with `log_prob`.
     flow = distrax.Inverse(distrax.Chain(layers))
-    base_distribution = make_gaussian_base_dist(event_shape)
+    base_distribution = make_gaussian_base_dist(event_shape, dtype)
     return distrax.Transformed(base_distribution, flow)
 

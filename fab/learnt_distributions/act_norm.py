@@ -14,22 +14,26 @@ BijectorParams = Any
 class ActNormParamMaker(hk.Module):
     """Create a haiku module for the act norm scale and shift parameters.
     These are initialised to 0 to give the identity transformation."""
-    def __init__(self, event_shape: Sequence[int], name=None):
+    def __init__(self, event_shape: Sequence[int], dtype: jax.lax.Precision,
+                 name=None):
         super().__init__(name=name)
         self.event_shape = event_shape
+        self.dtype = dtype
 
     def __call__(self) -> Tuple[Array, Array]:
-        shift = hk.get_parameter("shift", shape=self.event_shape, init=jnp.zeros)
-        log_scale = hk.get_parameter("log_scale", shape=self.event_shape, init=jnp.zeros)
+        shift = hk.get_parameter("shift", shape=self.event_shape, init=jnp.zeros,
+                                 dtype=self.dtype)
+        log_scale = hk.get_parameter("log_scale", shape=self.event_shape, init=jnp.zeros,
+                                     dtype=self.dtype)
         return shift, log_scale
 
 
 class ActNormBijector(distrax.Bijector):
-    def __init__(self, event_shape: Sequence[int]):
+    def __init__(self, event_shape: Sequence[int], dtype: jax.lax.Precision):
         event_n_dims = len(event_shape)
         assert event_n_dims == 1  # Currently we only seek to work with this case.
         super(ActNormBijector, self).__init__(event_ndims_in=event_n_dims)
-        self._bijector_param_maker = ActNormParamMaker(event_shape)
+        self._bijector_param_maker = ActNormParamMaker(event_shape, dtype=dtype)
 
     @property
     def bijector_param_maker(self) -> Callable[[Array], BijectorParams]:
