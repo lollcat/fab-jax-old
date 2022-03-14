@@ -91,11 +91,15 @@ class AgentFAB:
 
     def alpha_2_loss(self, x_samples, log_w_ais, learnt_distribution_params):
         """Minimise upper bound of $\alpha$-divergence with $\alpha=2$."""
+        valid_samples = jnp.isfinite(log_w_ais) & jnp.all(jnp.isfinite(x_samples), axis=-1)
+        # remove invalid x_samples so we don't get NaN gradients.
+        x_samples = jnp.where(valid_samples[:, None].repeat(x_samples.shape[-1], axis=-1),
+                              x_samples, jnp.zeros_like(x_samples))
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
         inner_term = log_w_ais + log_w
-        valid_samples = jnp.isfinite(inner_term)
+        # give invalid x_sample terms 0 importance weight.
         inner_term = jnp.where(valid_samples, inner_term, -jnp.ones_like(inner_term) * float("inf"))
         alpha_2_loss = jax.nn.logsumexp(inner_term)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)

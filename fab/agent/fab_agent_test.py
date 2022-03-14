@@ -32,7 +32,7 @@ class Test_AgentFAB(absltest.TestCase):
     log_prob_2D = target.log_prob_2D
     batch_size = 128
     n_iter = int(1e4)
-    loss_type = "forward_kl"  # "alpha_2_div"
+    loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     n_intermediate_distributions: int = 2
     max_grad_norm = 1.0
     lr = 5e-4
