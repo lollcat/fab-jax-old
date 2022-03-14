@@ -1,14 +1,15 @@
-from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from typing import Optional, Callable
 import jax.numpy as jnp
-from fab.types import TargetLogProbFunc, HaikuDistribution
 import haiku as hk
-
 from functools import partial
 import numpy as np
 import jax
 import optax
 from tqdm import tqdm
+
 from fab.utils.tree_utils import stack_sequence_fields
+from fab.types import TargetLogProbFunc, HaikuDistribution
+from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 
 
 class AgentFAB:
@@ -17,16 +18,19 @@ class AgentFAB:
                  learnt_distribution: HaikuDistribution,
                  target_log_prob: TargetLogProbFunc,
                  batch_size: int,
-                 n_iter: int,
                  n_intermediate_distributions: int = 2,
+                 loss_type: str = "alpha_2_div",
                  AIS_kwargs = None,
                  seed: int = 0,
-                 optimizer: optax.GradientTransformation = optax.adam(1e-4)
+                 optimizer: optax.GradientTransformation = optax.adam(1e-4),
+                 plotter: Optional[Callable] = None
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
         self.batch_size = batch_size
-        self.n_iter = n_iter
+        assert loss_type in ["alpha_2_div", "forward_kl"]
+        self.loss_type = loss_type
+        self.plotter = plotter
         self.annealed_importance_sampler = AnnealedImportanceSampler(learnt_distribution,
                                                                      target_log_prob,
                                                                      batch_size,
@@ -41,8 +45,11 @@ class AgentFAB:
         self._history = []
 
 
-    def run(self):
-        pbar = tqdm(range(self.n_iter))
+    def run(self, n_iter, n_plots: int = None):
+        if n_plots is not None:
+            plot_iter = list(np.linspace(0, n_iter - 1, n_plots, dtype="int"))
+
+        pbar = tqdm(range(n_iter))
         for i in pbar:
             x_AIS, log_w_AIS, ais_info = self.annealed_importance_sampler.run(next(self.rng),
                                                                     self.learnt_distribution_params)
@@ -51,8 +58,12 @@ class AgentFAB:
                             self.optimizer_state)
             info.update(ais_info)
             self._history.append(info)
-            if i % 100:
+            if i % 500:
                 pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
+            if n_plots is not None:
+                if i in plot_iter:
+                    self.plotter(self)
+
 
     @property
     def history(self):
@@ -62,31 +73,39 @@ class AgentFAB:
     @partial(jax.jit, static_argnums=0)
     def update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
         (alpha_2_loss, (log_w, log_q_x, log_p_x)), grads = jax.value_and_grad(
-            self.loss,
-                                                                  argnums=2, has_aux=True)(
+            self.loss, argnums=2, has_aux=True)(
             x_AIS, log_w_AIS, learnt_distribution_params
         )
-        updates, new_opt_state = self.optimizer.update(grads, opt_state,
+        updates, opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
         info = self.get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss)
         return learnt_distribution_params, opt_state, info
 
 
-    def loss(self, x_samples, log_w_AIS, learnt_distribution_params):
-        """Minimise upper bound of $\alpha$-divergence with $\alpha=2$."""
-        x_samples = jax.lax.stop_gradient(x_samples)
-        log_w_AIS = jax.lax.stop_gradient(log_w_AIS)
+    def loss(self, x_samples, log_w_ais, learnt_distribution_params):
+        if self.loss_type == "alpha_2_div":
+            return self.alpha_2_loss(x_samples, log_w_ais, learnt_distribution_params)
+        else:
+            return self.forward_kl_loss(x_samples, log_w_ais, learnt_distribution_params)
 
+    def alpha_2_loss(self, x_samples, log_w_ais, learnt_distribution_params):
+        """Minimise upper bound of $\alpha$-divergence with $\alpha=2$."""
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
-        # remove nans by making them carry 0 value in logsumexp (by setting them equal to neginf).
-        neg_inf = -float("inf")
-        log_w_AIS = jnp.nan_to_num(log_w_AIS, nan=neg_inf, neginf=neg_inf)
-        log_w = jnp.nan_to_num(log_w, nan=neg_inf, neginf=neg_inf)
-        alpha_2_loss = jax.nn.logsumexp(log_w + log_w_AIS)
+        inner_term = log_w_ais + log_w
+        valid_samples = jnp.isfinite(inner_term)
+        inner_term = jnp.where(valid_samples, inner_term, -jnp.ones_like(inner_term) * float("inf"))
+        alpha_2_loss = jax.nn.logsumexp(inner_term)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
+
+    def forward_kl_loss(self, x_samples, log_w_ais, learnt_distribution_params):
+        w_ais = jax.nn.softmax(log_w_ais, axis=0)
+        log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
+        log_p_x = self.target_log_prob(x_samples)
+        log_w = log_p_x - log_q_x
+        return - jnp.mean(w_ais * log_q_x), (log_w, log_q_x, log_p_x)
 
     @staticmethod
     def get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss):
