@@ -8,6 +8,8 @@ LogProbs = jnp.ndarray
 TargetLogProbFunc = Callable[[XPoints], LogProbs]
 MCMCTransitionManager = Any
 Params = Any
+# TODO: rather define init, and then log prob like this
+# GetLogProb = Callable[[Params, XPoints], LogProbs]
 
 @dataclass
 class HaikuDistribution:  # this distribution also takes in trainable parameters into all of it's

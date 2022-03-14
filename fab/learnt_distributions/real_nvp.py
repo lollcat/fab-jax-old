@@ -130,8 +130,8 @@ def make_flow_model(event_shape: Sequence[int],
                     act_norm: bool) -> distrax.Transformed:
     """Creates the flow model."""
     dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
-    assert len(event_shape) == 1  # currently only focusing on this case (all elements in 1 dim).
     event_ndims = len(event_shape)
+    assert event_ndims == 1  # currently only focusing on this case (all elements in 1 dim).
     layers = []
     n_params = np.prod(event_shape)
     split_index = n_params // 2
@@ -158,8 +158,7 @@ def make_flow_model(event_shape: Sequence[int],
             act_norm_layer = ActNormBijector(event_shape=event_shape, dtype=dtype)
             layers.append(act_norm_layer)
 
-    # We invert the flow so that the `forward` method is called with `log_prob`.
-    flow = distrax.Inverse(distrax.Chain(layers))
+    flow = distrax.Chain(layers)
     base_distribution = make_gaussian_base_dist(event_shape, dtype)
     return distrax.Transformed(base_distribution, flow)
 

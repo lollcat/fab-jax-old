@@ -1,6 +1,5 @@
 from absl.testing import absltest
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
-from fab.learnt_distributions.distrax_spline_flo import make_rational_quadratic_spline_dist_funcs
 from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
 from fab.target_distributions.many_well import ManyWellEnergy
 import distrax

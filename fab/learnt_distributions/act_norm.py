@@ -43,7 +43,7 @@ class ActNormBijector(distrax.Bijector):
     def bijector(self) -> distrax.Bijector:
         shift, log_scale = self._bijector_param_maker()
         bijector = distrax.ScalarAffine(shift=shift, log_scale=log_scale)
-        bijector = distrax.Block(bijector, 1)  # final dimension is event dimension
+        bijector = distrax.Block(bijector, 1)  # 1 dimension is different elements of x
         return bijector
 
     def forward_and_log_det(self, x: Array) -> Tuple[Array, Array]:

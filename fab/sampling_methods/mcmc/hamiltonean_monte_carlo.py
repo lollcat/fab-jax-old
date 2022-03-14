@@ -58,6 +58,7 @@ class HamiltoneanMonteCarlo:
         def U(learnt_dist_params, q, i):
             j = i + 1  # j is loop iter param in annealed_importance_sampling.py
             return - self.intermediate_target_log_prob_fn(learnt_dist_params, q, j)
+
         def grad_U(learnt_dist_params, q, j):
             return jnp.clip(jax.grad(U, argnums=1)(learnt_dist_params, q, j), a_min=-max_grad,
                             a_max=max_grad)

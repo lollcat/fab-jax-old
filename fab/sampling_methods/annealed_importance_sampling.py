@@ -76,13 +76,13 @@ class AnnealedImportanceSampler:
 
 
     def perform_transition(self, key, learnt_distribution_params,
-                           transition_operator_state, x_new, log_w, j):
-        x_new, transition_operator_state, aux_transition_info = \
+                           transition_operator_state, x, log_w, j):
+        x, transition_operator_state, aux_transition_info = \
             self.transition_operator_manager.run(key, learnt_distribution_params,
-                  transition_operator_state, x_new, j - 1)
-        log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, x_new, j + 1) - \
-                self.intermediate_unnormalised_log_prob(learnt_distribution_params, x_new, j)
-        return x_new, log_w, transition_operator_state, aux_transition_info
+                  transition_operator_state, x, j - 1)
+        log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, x, j + 1) - \
+                self.intermediate_unnormalised_log_prob(learnt_distribution_params, x, j)
+        return x, log_w, transition_operator_state, aux_transition_info
 
 
 
