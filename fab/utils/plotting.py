@@ -5,6 +5,8 @@ import numpy as np
 import jax.numpy as jnp
 import matplotlib as mpl
 import itertools
+import pandas as pd
+
 
 def plot_history(history):
     """
@@ -16,7 +18,7 @@ def plot_history(history):
             ax = axs
         else:
             ax = axs[i]
-        data = history[key].squeeze()
+        data = np.asarray(history[key]).squeeze()
         if len(data.shape) == 3:
             split_axis = 1
             data_split = np.split(data, indices_or_sections=data.shape[1],
@@ -29,6 +31,7 @@ def plot_history(history):
             ax.plot(data)
             ax.set_title(key)
     plt.tight_layout()
+
 
 def plot_3D(x, z, n, ax, title=None):
     x1 = x[:, 0].reshape(n, n)

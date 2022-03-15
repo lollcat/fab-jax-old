@@ -54,7 +54,7 @@ class Test_AgentFAB(absltest.TestCase):
 
     def test_fab_agent(self):
         self.fab_agent.run(n_iter=self.n_iter, n_plots=self.n_plots)
-        plot_history(self.fab_agent.history)
+        plot_history(self.fab_agent.logger.history)
         plt.show()
 
 

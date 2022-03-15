@@ -1,3 +1,9 @@
 distrax
 dm-haiku
 optax
+wandb
+tqdm
+pandas
+hydra-core
+hydra-joblib-launcher
+joblib

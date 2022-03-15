@@ -7,10 +7,9 @@ import jax
 import optax
 from tqdm import tqdm
 
-from fab.utils.tree_utils import stack_sequence_fields
 from fab.types import TargetLogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
-
+from fab.utils.logging import Logger, ListLogger, to_numpy
 
 class AgentFAB:
     """Flow Annealed Importance Sampling Bootstrap Agent"""
@@ -23,7 +22,8 @@ class AgentFAB:
                  AIS_kwargs = None,
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
-                 plotter: Optional[Callable] = None
+                 plotter: Optional[Callable] = None,
+                 logger: Logger = ListLogger(save=False)
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
@@ -31,6 +31,7 @@ class AgentFAB:
         assert loss_type in ["alpha_2_div", "forward_kl"]
         self.loss_type = loss_type
         self.plotter = plotter
+        self.logger = logger
         self.annealed_importance_sampler = AnnealedImportanceSampler(learnt_distribution,
                                                                      target_log_prob,
                                                                      batch_size,
@@ -42,7 +43,6 @@ class AgentFAB:
                                                                                  dummy_x)
         self.optimizer = optimizer
         self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
-        self._history = []
 
 
     def run(self, n_iter, n_plots: int = None):
@@ -57,17 +57,13 @@ class AgentFAB:
                 self.update(x_AIS, log_w_AIS, self.learnt_distribution_params,
                             self.optimizer_state)
             info.update(ais_info)
-            self._history.append(info)
+            info = to_numpy(info)
+            self.logger.write(info)
             if i % 500:
                 pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
             if n_plots is not None:
                 if i in plot_iter:
                     self.plotter(self)
-
-
-    @property
-    def history(self):
-        return stack_sequence_fields(jax.tree_map(np.asarray, self._history))
 
 
     @partial(jax.jit, static_argnums=0)
@@ -101,7 +97,7 @@ class AgentFAB:
         inner_term = log_w_ais + log_w
         # give invalid x_sample terms 0 importance weight.
         inner_term = jnp.where(valid_samples, inner_term, -jnp.ones_like(inner_term) * float("inf"))
-        alpha_2_loss = jax.nn.logsumexp(inner_term)
+        alpha_2_loss = jax.nn.logsumexp(inner_term, axis=0)
         return alpha_2_loss, (log_w, log_q_x, log_p_x)
 
     def forward_kl_loss(self, x_samples, log_w_ais, learnt_distribution_params):
