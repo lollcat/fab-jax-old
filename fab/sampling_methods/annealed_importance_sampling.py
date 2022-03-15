@@ -3,7 +3,7 @@ import jax
 from functools import partial
 from typing import Dict
 
-from fab.types import TargetLogProbFunc, HaikuDistribution
+from fab.types_ import TargetLogProbFunc, HaikuDistribution
 from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 
@@ -30,19 +30,12 @@ class AnnealedImportanceSampler:
         self.n_intermediate_distributions = n_intermediate_distributions
         self.distribution_spacing_type = distribution_spacing_type
         self.setup_n_distributions()
-        # we manage the mcmc params within this class
-        # initialise HMC param class
-        self.transition_operator_state = self.transition_operator_manager.get_init_state()
-
-    def run(self, key, learnt_distribution_params):
-        x_new, log_w, transition_operator_state, aux_info = \
-            self._run(key, learnt_distribution_params, self.transition_operator_state)
-        self.transition_operator_state = transition_operator_state
-        return x_new, log_w, aux_info
 
 
-    @partial(jax.jit, static_argnums=(0,))
-    def _run(self, key, learnt_distribution_params, transition_operator_state):
+
+    # @partial(jax.jit, static_argnums=(0,)) # we instead jit everything together in the agent
+    def run(self, key, learnt_distribution_params, transition_operator_state):
+        """Run annealed importance sampling procedure."""
         key, subkey = jax.random.split(key, 2)
         log_w = jnp.zeros(self.n_parallel_runs)  # log importance weight
         x_base, log_prob_p0 = self.learnt_distribution.sample_and_log_prob.apply(

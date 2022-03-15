@@ -14,7 +14,7 @@ def plotter(fab_agent, log_prob_2D):
     fig, ax = plt.subplots()
     plot_contours_2D(log_prob_2D, ax=ax, bound=3, levels=20)
     samples = fab_agent.learnt_distribution.sample.apply(
-        fab_agent.learnt_distribution_params,
+        fab_agent.state.learnt_distribution_params,
         jax.random.PRNGKey(0), (500,))
     plot_marginal_pair(samples, ax=ax)
     plt.show()

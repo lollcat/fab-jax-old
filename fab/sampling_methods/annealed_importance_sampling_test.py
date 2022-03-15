@@ -10,6 +10,7 @@ import chex
 
 
 class Test_HMC(absltest.TestCase):
+    """See examples/visualise_ais.ipynb for further visualisation."""
     x_ndim = 4
     flow_num_layers = 2
 
@@ -27,11 +28,14 @@ class Test_HMC(absltest.TestCase):
     rng = hk.PRNGSequence(0)
     x = jnp.zeros((n_parallel_runs, x_ndim))
     init_learnt_distribution_params = flow_haiku_dist.log_prob.init(next(rng), x)
+    init_transition_operator_state = AIS.transition_operator_manager.get_init_state()
 
 
     def test__run(self):
-        x_new, log_w = self.AIS.run(next(self.rng), self.init_learnt_distribution_params)
-        chex.assert_shape(x_new, (self.n_parallel_runs, self.x_ndim))
+        x, log_w, transition_operator_state, aux_info = self.AIS.run(
+            next(self.rng),  self.init_learnt_distribution_params,
+                                    self.init_transition_operator_state)
+        chex.assert_shape(x, (self.n_parallel_runs, self.x_ndim))
         chex.assert_shape(log_w, (self.n_parallel_runs,))
 
 
@@ -43,17 +47,14 @@ class Test_HMC(absltest.TestCase):
             target_log_prob=self.target_log_prob,
             n_parallel_runs=n_parallel_runs,
             n_intermediate_distributions=n_intermediate_distributions)
-        x_new, log_w = self.AIS.run(next(self.rng), self.init_learnt_distribution_params)
+        x, log_w, transition_operator_state, aux_info = self.AIS.run(
+            next(self.rng), self.init_learnt_distribution_params,
+            self.init_transition_operator_state)
         import matplotlib.pyplot as plt
-        plt.plot(x_new[:, 0], x_new[:, 1], "o", alpha=0.3)
+        plt.plot(x[:, 0], x[:, 1], "o", alpha=0.3)
         plt.title("points from AIS")
         plt.show()
 
-        # TODO: plot with resampling
-
-    def test__multi_step_run(self):
-        pass
-        # TODO: test p_accept tuning, and gradient based tuning with nice visualisations
 
 
 

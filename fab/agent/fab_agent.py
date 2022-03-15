@@ -1,4 +1,6 @@
-from typing import Optional, Callable
+from typing import Optional, Callable, NamedTuple, Tuple, Dict, Any
+
+import chex
 import jax.numpy as jnp
 import haiku as hk
 from functools import partial
@@ -7,9 +9,20 @@ import jax
 import optax
 from tqdm import tqdm
 
-from fab.types import TargetLogProbFunc, HaikuDistribution
+from fab.types_ import TargetLogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
+
+
+Info = Dict[str, Any]
+
+
+class State(NamedTuple):
+    key: chex.PRNGKey
+    learnt_distribution_params: hk.Params
+    optimizer_state: optax.OptState
+    transition_operator_state: chex.ArrayTree
+
 
 class AgentFAB:
     """Flow Annealed Importance Sampling Bootstrap Agent"""
@@ -37,12 +50,39 @@ class AgentFAB:
                                                                      batch_size,
                                                                      n_intermediate_distributions,
                                                                      **AIS_kwargs)
-        self.rng = hk.PRNGSequence(key_or_seed=seed)
-        dummy_x = jnp.zeros((batch_size, learnt_distribution.dim))
-        self.learnt_distribution_params = self.learnt_distribution.log_prob.init(next(self.rng),
-                                                                                 dummy_x)
         self.optimizer = optimizer
-        self.optimizer_state = self.optimizer.init(self.learnt_distribution_params)
+        self.state = self.init_state(seed)
+
+    def init_state(self, seed) -> State:
+        key = jax.random.PRNGKey(seed)
+        key, subkey = jax.random.split(key)
+
+        dummy_x = jnp.zeros((self.batch_size, self.learnt_distribution.dim))
+        learnt_distribution_params = self.learnt_distribution.log_prob.init(subkey,
+                                                                            dummy_x)
+
+        optimizer_state = self.optimizer.init(learnt_distribution_params)
+        transition_operator_state = self.annealed_importance_sampler.\
+            transition_operator_manager.get_init_state()
+        state = State(key=key, learnt_distribution_params=learnt_distribution_params,
+                      transition_operator_state=transition_operator_state,
+                      optimizer_state=optimizer_state)
+        return state
+
+
+    @partial(jax.jit, static_argnums=0)
+    def step(self, state: State) -> Tuple[State, Info]:
+        key, subkey = jax.random.split(state.key)
+        x_ais, log_w_ais, transition_operator_state, ais_info = self.annealed_importance_sampler.run(
+            subkey, state.learnt_distribution_params, state.transition_operator_state)
+        learnt_distribution_params, optimizer_state, info = \
+            self.update(x_ais, log_w_ais, state.learnt_distribution_params,
+                        state.optimizer_state)
+        state = State(key=key, learnt_distribution_params=learnt_distribution_params,
+                      optimizer_state=optimizer_state,
+                      transition_operator_state=transition_operator_state)
+        info.update(ais_info)
+        return state, info
 
 
     def run(self, n_iter, n_plots: int = None):
@@ -51,12 +91,7 @@ class AgentFAB:
 
         pbar = tqdm(range(n_iter))
         for i in pbar:
-            x_AIS, log_w_AIS, ais_info = self.annealed_importance_sampler.run(next(self.rng),
-                                                                    self.learnt_distribution_params)
-            self.learnt_distribution_params, self.optimizer_state, info = \
-                self.update(x_AIS, log_w_AIS, self.learnt_distribution_params,
-                            self.optimizer_state)
-            info.update(ais_info)
+            self.state, info = self.step(self.state)
             info = to_numpy(info)
             self.logger.write(info)
             if i % 500:
@@ -66,16 +101,16 @@ class AgentFAB:
                     self.plotter(self)
 
 
-    @partial(jax.jit, static_argnums=0)
-    def update(self, x_AIS, log_w_AIS, learnt_distribution_params, opt_state):
+
+    def update(self, x_ais, log_w_ais, learnt_distribution_params, opt_state):
         (alpha_2_loss, (log_w, log_q_x, log_p_x)), grads = jax.value_and_grad(
             self.loss, argnums=2, has_aux=True)(
-            x_AIS, log_w_AIS, learnt_distribution_params
+            x_ais, log_w_ais, learnt_distribution_params
         )
         updates, opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
-        info = self.get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss)
+        info = self.get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss)
         return learnt_distribution_params, opt_state, info
 
 
@@ -108,11 +143,11 @@ class AgentFAB:
         return - jnp.mean(w_ais * log_q_x), (log_w, log_q_x, log_p_x)
 
     @staticmethod
-    def get_info(x_AIS, log_w_AIS, log_w, log_q_x, log_p_x, alpha_2_loss):
+    def get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss):
         info = {}
         mean_log_p_x = jnp.mean(log_p_x)
         info.update(loss=alpha_2_loss,
                     mean_log_p_x=mean_log_p_x,
-                    n_non_finite_ais_log_w=jnp.sum(~jnp.isfinite(log_w_AIS)),
-                    n_non_finite_ais_x_samples=jnp.sum(~jnp.isfinite(x_AIS[:, 0])))
+                    n_non_finite_ais_log_w=jnp.sum(~jnp.isfinite(log_w_ais)),
+                    n_non_finite_ais_x_samples=jnp.sum(~jnp.isfinite(x_ais[:, 0])))
         return info

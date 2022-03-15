@@ -3,7 +3,7 @@ import jax
 import optax
 from typing import NamedTuple
 from functools import partial
-from fab.types import Params
+from fab.types_ import Params
 import chex
 
 
