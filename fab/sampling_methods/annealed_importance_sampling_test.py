@@ -23,7 +23,6 @@ class Test_HMC(absltest.TestCase):
     AIS = AnnealedImportanceSampler(
                  learnt_distribution=flow_haiku_dist,
                  target_log_prob=target_log_prob,
-                 n_parallel_runs=n_parallel_runs,
                  n_intermediate_distributions=n_intermediate_distributions)
     rng = hk.PRNGSequence(0)
     x = jnp.zeros((n_parallel_runs, x_ndim))
@@ -33,6 +32,7 @@ class Test_HMC(absltest.TestCase):
 
     def test__run(self):
         x, log_w, transition_operator_state, aux_info = self.AIS.run(
+            self.n_parallel_runs,
             next(self.rng),  self.init_learnt_distribution_params,
                                     self.init_transition_operator_state)
         chex.assert_shape(x, (self.n_parallel_runs, self.x_ndim))
@@ -45,9 +45,8 @@ class Test_HMC(absltest.TestCase):
         self.AIS = AnnealedImportanceSampler(
             learnt_distribution=self.flow_haiku_dist,
             target_log_prob=self.target_log_prob,
-            n_parallel_runs=n_parallel_runs,
             n_intermediate_distributions=n_intermediate_distributions)
-        x, log_w, transition_operator_state, aux_info = self.AIS.run(
+        x, log_w, transition_operator_state, aux_info = self.AIS.run(n_parallel_runs,
             next(self.rng), self.init_learnt_distribution_params,
             self.init_transition_operator_state)
         import matplotlib.pyplot as plt

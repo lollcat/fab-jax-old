@@ -16,11 +16,7 @@ import matplotlib.pyplot as plt
 from fab.types_ import TargetLogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
-
-
-Info = Dict[str, Any]
-Agent = Any
-Plotter = Callable[[Any], Iterable[plt.Figure]]
+from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 
 
 class State(NamedTuple):
@@ -30,6 +26,13 @@ class State(NamedTuple):
     transition_operator_state: chex.ArrayTree
 
 
+Info = Dict[str, Any]
+Agent = Any
+BatchSize = int
+Plotter = Callable[[Agent], Iterable[plt.Figure]]
+Evaluator = Callable[[BatchSize, BatchSize, State], Dict[str, chex.Array]]
+
+
 class AgentFAB:
     """Flow Annealed Importance Sampling Bootstrap Agent"""
     def __init__(self,
@@ -37,17 +40,19 @@ class AgentFAB:
                  target_log_prob: TargetLogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
-                 AIS_kwargs = None,
+                 AIS_kwargs: Dict = {},
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
-                 plotter: Optional[Callable] = None,
-                 logger: Logger = ListLogger(save=False)
+                 plotter: Optional[Plotter] = None,
+                 logger: Logger = ListLogger(save=False),
+                 evaluator: Optional[Evaluator] = None,
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
         assert loss_type in ["alpha_2_div", "forward_kl"]
         self.loss_type = loss_type
         self.plotter = plotter
+        self.evaluator = evaluator
         self.logger = logger
         self.annealed_importance_sampler = AnnealedImportanceSampler(learnt_distribution,
                                                                      target_log_prob,
@@ -132,7 +137,7 @@ class AgentFAB:
         return state, info
 
     @staticmethod
-    def get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss):
+    def get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss) -> Info:
         """Get info for logging during training."""
         info = {}
         mean_log_p_x = jnp.mean(log_p_x)
@@ -142,14 +147,39 @@ class AgentFAB:
                     n_non_finite_ais_x_samples=jnp.sum(~jnp.isfinite(x_ais[:, 0])))
         return info
 
-    def get_eval_info(self, outer_batch_size: int, inner_batch_size: int) -> Info:
+    @partial(jax.jit, static_argnums=(0, 1, 2))
+    def get_eval_info(self, outer_batch_size: int, inner_batch_size: int, state: State) -> Info:
         """Evaluate the model. We split outer_batch_size into chunks of size inner_batch_size
-        to prevent overloading the GPU"""
-        return {}
+        to prevent overloading the GPU."""
+        n_inner_batch = outer_batch_size // inner_batch_size
+
+        def scan_func(carry, x):
+            key = carry
+            key, subkey = jax.random.split(key)
+            # get log_w from flow
+            x, log_q = self.learnt_distribution.sample_and_log_prob.apply(
+            state.learnt_distribution_params, rng=subkey, sample_shape=(inner_batch_size,))
+            log_w = self.target_log_prob(x) - log_q
+            # get ais log_w
+            _, log_w_ais, _, _ = \
+                self.annealed_importance_sampler.run(
+                    inner_batch_size, subkey, state.learnt_distribution_params,
+                    state.transition_operator_state)
+            return key, (log_w_ais, log_w)
+
+        _, (log_w_ais, log_w) = jax.lax.scan(scan_func, state.key, jnp.arange(n_inner_batch))
+        eval_info = \
+            {"eval_ess_ais": effective_sample_size_from_unnormalised_log_weights(
+                log_w_ais.flatten()),
+            "eval_ess_flow": effective_sample_size_from_unnormalised_log_weights(log_w.flatten())
+            }
+        if self.evaluator is not None:
+            eval_info.update(self.evaluator(outer_batch_size, inner_batch_size, state))
+        return eval_info
 
 
     def run(self,
-            n_iter,
+            n_iter: int,
             batch_size: int,
             eval_batch_size: Optional[int] = None,
             n_evals: Optional[int] = None,
@@ -157,7 +187,8 @@ class AgentFAB:
             n_checkpoints: Optional[int] = None,
             save: bool = False,
             plots_dir: str = "tmp/plots",
-            checkpoints_dir: str = "tmp/chkpts") -> None:
+            checkpoints_dir: str = "tmp/chkpts",
+            logging_freq: int = 1) -> None:
         """Train the fab model."""
         if save:
             pathlib.Path(plots_dir).mkdir(exist_ok=True, parents=True)
@@ -167,20 +198,25 @@ class AgentFAB:
         if n_evals is not None:
             eval_iter = list(np.linspace(0, n_iter - 1, n_evals, dtype="int"))
             assert eval_batch_size is not None
+            assert eval_batch_size % batch_size == 0
         if n_plots is not None:
             plot_iter = list(np.linspace(0, n_iter - 1, n_plots, dtype="int"))
 
         pbar = tqdm(range(n_iter))
         for i in pbar:
             self.state, info = self.step(batch_size, self.state)
-            info = to_numpy(info)
-            self.logger.write(info)
-            if i % 500:
-                pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
+            if i % logging_freq == 0:
+                info = to_numpy(info)
+                info.update(step=i)
+                self.logger.write(info)
+                if i % max(10*logging_freq, 100):
+                    pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
             if n_evals is not None:
                 if i in eval_iter:
-                    eval_info = self.get_eval_info(outer_batch_size=eval_batch_size,
-                                                inner_batch_size=batch_size)
+                    eval_info = self.get_eval_info(
+                        outer_batch_size=eval_batch_size,
+                        inner_batch_size=batch_size,
+                        state=self.state)
                     eval_info.update(step=i)
                     self.logger.write(eval_info)
 
@@ -198,6 +234,7 @@ class AgentFAB:
                     self.save(checkpoint_path)
 
         self.logger.close()
+
 
     def save(self, path: str):
         with open(os.path.join(path, "state.pkl"), "wb") as f:

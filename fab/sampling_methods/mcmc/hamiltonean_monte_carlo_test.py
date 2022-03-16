@@ -9,6 +9,8 @@ import distrax
 
 from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo, \
     HMCStateGradientBased, HMCStatePAccept
+from fab.utils.plotting import plot_history
+from fab.utils.logging import ListLogger
 
 
 
@@ -25,12 +27,12 @@ class Test_HMC(absltest.TestCase):
     n_inner_steps = 4
     HMC_p_accept = HamiltoneanMonteCarlo(dim, n_intermediate_distributions,
                                   intermediate_target_log_prob_fn,
-                     batch_size, step_tuning_method="p_accept", n_outer_steps=n_outer_steps,
+                     step_tuning_method="p_accept", n_outer_steps=n_outer_steps,
                                          n_inner_steps=n_inner_steps,
                      initial_step_size= 1.0, lr=1e-3)
     HMC_grad_based = HamiltoneanMonteCarlo(dim, n_intermediate_distributions,
                                   intermediate_target_log_prob_fn,
-                     batch_size, step_tuning_method="gradient_based", n_outer_steps=n_outer_steps,
+                     step_tuning_method="gradient_based", n_outer_steps=n_outer_steps,
                                            n_inner_steps=n_inner_steps,
                      initial_step_size=1.0, lr=1e-3)
 
@@ -229,26 +231,11 @@ class Test_HMC(absltest.TestCase):
                 jitted_transition = jax.jit(HMC_class.run,
                                             static_argnums=4)
                 x = x_init
-                mean_p_accept_hist = []
-                step_size_hist = []
-                mean_delta_per_element_hist = []
-                expected_scaled_mean_distance_per_outer_loop_hist = []
+                logger = ListLogger(save=False)
                 for _ in range(n_loops):
                     x, transition_operator_state, interesting_info = jitted_transition(
                        key, learnt_distribution_param, transition_operator_state, x, i)
-                    mean_p_accept = list(interesting_info[
-                        "average_acceptance_probabilities_per_outer_loop"])
-                    mean_p_accept_hist.append(mean_p_accept)
-                    step_size_hist.append(list(HMC_class.get_step_size_param_for_dist(
-                        transition_operator_state.step_size_params, i)))
-                    mean_delta_per_element_hist.append(list(
-                        interesting_info["mean_delta_per_element"]))
-                    expected_scaled_mean_distance_per_outer_loop_hist.append(list((
-                        interesting_info["expected_scaled_mean_distance_per_outer_loop"])))
-                step_size_hist = np.array(step_size_hist)
-                expected_scaled_mean_distance_per_outer_loop_hist = \
-                    np.array(expected_scaled_mean_distance_per_outer_loop_hist)
-                mean_delta_per_element_hist = np.array(mean_delta_per_element_hist)
+                    logger.write(interesting_info)
                 x_init = np.array(x_init)
                 x = np.array(x)
                 fig, axs = plt.subplots(3)
@@ -261,34 +248,10 @@ class Test_HMC(absltest.TestCase):
                 plt.tight_layout()
                 plt.show()
 
-                plt.plot(mean_p_accept_hist)
-                plt.title("p_accept_history")
+                plot_history(logger.history)
                 plt.show()
-
-                if name == "p_accept":
-                    plt.plot(step_size_hist)
-                    plt.title("step size history")
-                    plt.show()
-                else:
-                    plt.plot(step_size_hist[:, :, 0], "--", label="dim1")
-                    plt.plot(step_size_hist[:, :, 1], label="dim2")
-                    plt.legend()
-                    plt.title("step size history")
-                    plt.show()
-
-                plt.plot(mean_delta_per_element_hist[:, :, 0], "--", label="dim1")
-                plt.plot(mean_delta_per_element_hist[:, :, 1], label="dim2")
-                plt.legend()
-                plt.title("movement per dim history")
-                plt.show()
-
-                # TODO expected_scaled_mean_distance_per_outer_loop_hist shapes seem wierd
-                # inspect and plot
         else:
             pass
-
-
-    # TODO: eyeball the algorithm to double check all the steps are correct
 
 
 if __name__ == '__main__':

@@ -38,6 +38,8 @@ class Test_AgentFAB(absltest.TestCase):
     max_grad_norm = 1.0
     lr = 5e-4
     n_plots = 10
+    n_evals = 10
+    eval_batch_size = batch_size*2
 
     AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
 
@@ -54,7 +56,8 @@ class Test_AgentFAB(absltest.TestCase):
 
     def test_fab_agent(self):
         self.fab_agent.run(n_iter=self.n_iter, batch_size=self.batch_size, n_plots=self.n_plots,
-                           save=True, n_checkpoints=2)
+                           save=False, n_checkpoints=None, n_evals=self.n_evals,
+                           eval_batch_size=self.eval_batch_size)
         plot_history(self.fab_agent.logger.history)
         plt.show()
 

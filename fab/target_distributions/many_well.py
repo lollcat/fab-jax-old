@@ -54,33 +54,15 @@ class ManyWellEnergy:
         self.n_wells = dim // 2
         self.double_well_energy = DoubleWellEnergy(dim=2, *args, **kwargs)
         self.dim = dim
-        self.centre = 1.7
-        self.max_dim_for_all_modes = 40 # otherwise we get memory issues on huuuuge test set
-        if self.dim < self.max_dim_for_all_modes:
-            dim_1_vals_grid = np.meshgrid(*[np.array([-self.centre, self.centre])for _ in
-                                          range(self.n_wells)])
-            dim_1_vals = np.stack([dim.flatten() for dim in dim_1_vals_grid], axis=-1)
-            n_modes = 2**self.n_wells
-            assert n_modes == dim_1_vals.shape[0]
-            self.test_set__ = np.zeros((n_modes, dim))
-            self.test_set__[:, np.arange(dim) % 2 == 0] = dim_1_vals
-            self.test_set__ = jnp.array(self.test_set__)
-        else:
-            raise NotImplementedError
-
-        self.true_energy_difference = 1.73 # calculated by by evaluating linspace of points changing x1, setting x2=0
-        self.shallow_well_bounds = [-1.75, -1.65]
-        self.deep_well_bounds = [1.7, 1.8]
-
-        # TODO: test set stuff needs to be written and checked
 
     def log_prob(self, x):
         return sum([self.double_well_energy.log_prob(x[..., i*2:i*2+2]) for i in range(
                 self.n_wells)])
 
     def log_prob_2D(self, x):
-        # for plotting, given 2D x
+        """Marginal 2D pdf - useful for plotting."""
         return self.double_well_energy.log_prob(x)
+
 
 if __name__ == '__main__':
     dim = 2

@@ -32,6 +32,7 @@ class Info(NamedTuple):
     std_per_element: jnp.ndarray
     mean_delta_per_element: jnp.ndarray
     expected_scaled_mean_distance_per_outer_loop: jnp.ndarray
+    distribution_number: jnp.int32
 
 
 
@@ -180,7 +181,8 @@ class HamiltoneanMonteCarlo:
         return Info(average_acceptance_probabilities_per_outer_loop,
                     std_per_element,
                     mean_delta_per_outer_loop_per_element,
-                    expected_scaled_mean_distance_per_outer_loop)
+                    expected_scaled_mean_distance_per_outer_loop,
+                    distribution_number=i)
 
 
     def run_and_loss(self, key, learnt_distribution_params,
@@ -209,8 +211,17 @@ class HamiltoneanMonteCarlo:
         else:
             raise NotImplementedError
 
-    def get_interesting_info(self, info) -> dict:
-        return info._asdict()
+    def get_interesting_info(self, info: Info) -> dict:
+        """Convert info into form used for logging. Note this is for a single AIS distribution,
+        in the annealed_importance_sampler we manage the logging across distributions."""
+        info_dict = {}
+        info_dict.update(mean_p_accept=info.average_acceptance_probabilities_per_outer_loop[0])
+        info_dict.update(expected_distance_sqrd=info.expected_scaled_mean_distance_per_outer_loop[0])
+        info_dict.update({"delta_per_dim" + str(i): delta_per_dim for i, delta_per_dim in
+                          enumerate(info.mean_delta_per_element[0])})
+        info_dict.update({"std_per_dim" + str(i): delta_per_dim for i, delta_per_dim in
+                          enumerate(info.std_per_element)})
+        return info_dict
 
     def update_no_grad_params(self, i, no_grad_params, info) -> NoGradParams:
         return no_grad_params
