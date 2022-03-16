@@ -37,13 +37,12 @@ class Info(NamedTuple):
 
 class HamiltoneanMonteCarlo:
     def __init__(self, dim, n_intermediate_distributions, intermediate_target_log_prob_fn,
-                 batch_size, step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
+                 step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
                  initial_step_size: float = 1.0, lr=1e-3, max_grad=1e3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.intermediate_target_log_prob_fn = intermediate_target_log_prob_fn
         self.n_intermediate_distributions = n_intermediate_distributions
-        self.batch_size = batch_size
         self.step_tuning_method = step_tuning_method
         self.n_outer_steps = n_outer_steps
         self.n_inner_steps = n_inner_steps
@@ -187,7 +186,7 @@ class HamiltoneanMonteCarlo:
     def run_and_loss(self, key, learnt_distribution_params,
                      transition_operator_step_size_params, transition_operator_additional_state_info,
                      x_batch, i):
-        seeds = jax.random.split(key, self.batch_size)
+        seeds = jax.random.split(key, x_batch.shape[0])
         step_size = self.get_step_size_param_for_dist(transition_operator_step_size_params, i)
         x_batch_final, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
             self._run(seeds, learnt_distribution_params,

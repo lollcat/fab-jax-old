@@ -18,6 +18,7 @@ def plotter(fab_agent, log_prob_2D):
         jax.random.PRNGKey(0), (500,))
     plot_marginal_pair(samples, ax=ax)
     plt.show()
+    return [fig]
 
 
 class Test_AgentFAB(absltest.TestCase):
@@ -45,7 +46,6 @@ class Test_AgentFAB(absltest.TestCase):
 
     fab_agent = AgentFAB(learnt_distribution=real_nvp_flo,
                          target_log_prob=target_log_prob,
-                         batch_size=batch_size,
                          n_intermediate_distributions=n_intermediate_distributions,
                          AIS_kwargs=AIS_kwargs,
                          optimizer=optimizer,
@@ -53,7 +53,8 @@ class Test_AgentFAB(absltest.TestCase):
                          plotter=plotter)
 
     def test_fab_agent(self):
-        self.fab_agent.run(n_iter=self.n_iter, n_plots=self.n_plots)
+        self.fab_agent.run(n_iter=self.n_iter, batch_size=self.batch_size, n_plots=self.n_plots,
+                           save=True, n_checkpoints=2)
         plot_history(self.fab_agent.logger.history)
         plt.show()
 

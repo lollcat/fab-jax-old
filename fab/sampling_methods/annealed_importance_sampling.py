@@ -12,7 +12,6 @@ class AnnealedImportanceSampler:
     def __init__(self,
                  learnt_distribution: HaikuDistribution,
                  target_log_prob: TargetLogProbFunc,
-                 n_parallel_runs: int,
                  n_intermediate_distributions: int = 1,
                  transition_operator_type="HMC",
                  additional_transition_operator_kwargs={},
@@ -23,10 +22,9 @@ class AnnealedImportanceSampler:
             dim = learnt_distribution.dim
             self.transition_operator_manager = HamiltoneanMonteCarlo(
                 dim, n_intermediate_distributions, self.intermediate_unnormalised_log_prob,
-                n_parallel_runs, **additional_transition_operator_kwargs)
+                **additional_transition_operator_kwargs)
         else:
             raise NotImplementedError
-        self.n_parallel_runs = n_parallel_runs
         self.n_intermediate_distributions = n_intermediate_distributions
         self.distribution_spacing_type = distribution_spacing_type
         self.setup_n_distributions()
@@ -34,12 +32,12 @@ class AnnealedImportanceSampler:
 
 
     # @partial(jax.jit, static_argnums=(0,)) # we instead jit everything together in the agent
-    def run(self, key, learnt_distribution_params, transition_operator_state):
+    def run(self, batch_size, key, learnt_distribution_params, transition_operator_state):
         """Run annealed importance sampling procedure."""
         key, subkey = jax.random.split(key, 2)
-        log_w = jnp.zeros(self.n_parallel_runs)  # log importance weight
+        log_w = jnp.zeros(batch_size)  # log importance weight
         x_base, log_prob_p0 = self.learnt_distribution.sample_and_log_prob.apply(
-            learnt_distribution_params, rng=subkey, sample_shape=(self.n_parallel_runs,))
+            learnt_distribution_params, rng=subkey, sample_shape=(batch_size,))
         x = x_base
         log_w = log_w + self.intermediate_unnormalised_log_prob(learnt_distribution_params, 
                                                                 x, 1) - log_prob_p0
