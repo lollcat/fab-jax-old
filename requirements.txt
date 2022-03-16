@@ -4,6 +4,7 @@ optax
 wandb
 tqdm
 pandas
+matplotlib
 hydra-core
 hydra-joblib-launcher
 joblib
