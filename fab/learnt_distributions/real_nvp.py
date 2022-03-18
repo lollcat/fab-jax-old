@@ -9,10 +9,12 @@ import chex
 import haiku as hk
 import jax.numpy as jnp
 import numpy as np
+import tensorflow_probability.substrates.jax as tfp
 
 from fab.types_ import XPoints, LogProbs, HaikuDistribution
 from fab.utils.networks import LayerNormMLP
 from fab.learnt_distributions.act_norm import ActNormBijector
+
 
 
 PRNGKey = chex.PRNGKey
@@ -25,7 +27,7 @@ def make_realnvp_dist_funcs(
         flow_num_layers: int = 8,
         mlp_hidden_size_per_x_dim: int = 2,
         mlp_num_layers: int = 2,
-        use_exp: bool = False,
+        use_exp: bool = True,
         layer_norm: bool = False,
         act_norm: bool = True,
 ):
@@ -105,10 +107,11 @@ def make_scalar_affine_bijector(use_exp: bool = True):
       else:
           shift, pre_activate_scale = jnp.split(params, indices_or_sections=2, axis=-1)
           shift = jnp.squeeze(shift, axis=-1)
+          # for identity init
+          pre_activate_scale = tfp.math.softplus_inverse(1.0) + pre_activate_scale
           scale = jnp.squeeze(jax.nn.softplus(pre_activate_scale), axis=-1)
           return distrax.ScalarAffine(shift=shift, scale=scale)
     return bijector_fn
-
 
 def make_gaussian_base_dist(event_shape: Sequence[int], dtype: jax.lax.Precision):
     loc = hk.get_parameter("loc", shape=event_shape, init=jnp.zeros, dtype=dtype)
