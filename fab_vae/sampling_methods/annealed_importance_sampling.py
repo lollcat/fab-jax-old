@@ -70,10 +70,9 @@ class AnnealedImportanceSampler:
                            intermediate_log_prob: IntermediateLogProb):
         transition_target_log_prob: LogProbFunc = partial(intermediate_log_prob, j=j)
         x, transition_operator_state, aux_transition_info = \
-            self.transition_operator_manager.run(key,
-                  transition_operator_state, x, j - 1, transition_target_log_prob)
-        log_w = log_w + \
-                intermediate_log_prob(x, j + 1) - intermediate_log_prob(x, j)
+            self.transition_operator_manager.run(key, transition_operator_state, x,
+                                                 j - 1, transition_target_log_prob)
+        log_w = log_w + intermediate_log_prob(x, j + 1) - intermediate_log_prob(x, j)
         return x, log_w, transition_operator_state, aux_transition_info
 
 

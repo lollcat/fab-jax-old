@@ -9,7 +9,7 @@ import tensorflow_datasets as tfds
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from fab.utils.logging import ListLogger, to_numpy
+from fab.utils.logging import ListLogger, to_numpy, Logger
 from fab.utils.plotting import plot_history
 
 from fab_vae.models.fab_types import VAENetworks, Params, Info, State, AISOutput
@@ -26,29 +26,33 @@ class VAE:
             loss_type: str = "fab",
             latent_size: int = 10,
             use_flow: bool = True,
+            use_conv: bool = False,
             lr: float = 1e-3,
             batch_size: int = 64,
             seed: int = 0,
             n_samples_z_train: int = 10,
             n_samples_test: int = 20,
             ais_eval: bool = True,
+            n_ais_dist: int = 4,
+            logger: Logger = ListLogger()
     ):
         self.loss_type = loss_type
         self.vae_networks = make_vae_networks(
             latent_size=latent_size,
             output_shape=MNIST_IMAGE_SHAPE,
-            use_flow=use_flow
+            use_flow=use_flow,
+            use_conv=use_conv
         )
         self.latent_size = latent_size
         self.use_flow = use_flow
         self.optimizer = optax.adam(lr)
         self.batch_size = batch_size
         self.seed = seed
-        self.logger = ListLogger()
+        self.logger = logger
         assert loss_type in ["fab", "fab_combo", "fab_decoder", "vanilla"]
         self.use_vanilla = False if loss_type == "fab" else True
         self.ais = AnnealedImportanceSampler(dim=latent_size,
-                                                 n_intermediate_distributions=4)
+                                                 n_intermediate_distributions=n_ais_dist)
         self.n_samples_z_train = n_samples_z_train
         self.n_samples_z_test = n_samples_test
         if "fab" in loss_type:
@@ -258,23 +262,24 @@ class VAE:
             self.state, info = self.update(self.state, train_batch)
             self.logger.write(to_numpy(info))
 
-        plot_history(self.logger.history)
-        plt.show()
-
 
 
 if __name__ == '__main__':
     import numpy as np
-    loss_type = "vanilla" # "fab_decoder", "fab_combo", "vanilla", "fab"
+    loss_type = "fab_decoder" # "fab_decoder", "fab_combo", "vanilla", "fab"
     print(loss_type)
-    vae = VAE(use_flow=True,
-              batch_size=128,
+    vae = VAE(use_flow=False,
+              batch_size=24,
               loss_type=loss_type,
-              n_samples_z_train=1,
-              n_samples_test=2,
-              seed=4,
-              ais_eval=False)
+              n_samples_z_train=20,
+              n_samples_test=20,
+              seed=0,
+              ais_eval=True)
     vae.train(n_step=5000, eval_freq=50)
+
+    plot_history(vae.logger.history)
+    plt.show()
+
     print(np.max(np.asarray(vae.logger.history["eval_elbo"])))
     print(np.max(np.asarray(vae.logger.history["eval_marginal_log_lik_vanilla"])))
     print(np.max(np.asarray(vae.logger.history["eval_marginal_log_lik_ais"])))

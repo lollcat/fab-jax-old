@@ -10,7 +10,7 @@ import optax
 import tensorflow_datasets as tfds
 from tqdm import tqdm
 
-from fab_vae.models.nets import Decoder, EncoderTorso
+from fab_vae.models.nets import DecoderConv, EncoderTorsoConv, EncoderTorsoMLP, DecoderMLP
 from fab_vae.learnt_distributions.real_nvp import RealNVP
 from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
 from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
@@ -21,9 +21,9 @@ from fab_vae.models.fab_types import VAENetworks, EncoderNetworks, Params
 class Encoder(hk.Module):
   """Encoder model."""
 
-  def __init__(self, latent_size: int, use_flow: bool):
+  def __init__(self, latent_size: int, use_flow: bool, use_conv: bool):
     super().__init__()
-    self._encoder_torso = EncoderTorso()
+    self._encoder_torso = EncoderTorsoConv() if use_conv else EncoderTorsoMLP()
     self._latent_size = latent_size
     self.use_flow = use_flow
     if self.use_flow:
@@ -47,7 +47,9 @@ class Encoder(hk.Module):
 
 def make_vae_networks(latent_size: int,
                       output_shape: chex.Shape,
-                      use_flow: bool = True) -> VAENetworks:
+                      use_flow: bool = True,
+                      use_conv: bool = True) -> VAENetworks:
+    Decoder = DecoderConv if use_conv else DecoderMLP
     prior_z = distrax.MultivariateNormalDiag(
         loc=jnp.zeros((latent_size,)),
         scale_diag=jnp.ones((latent_size,)))
@@ -55,13 +57,13 @@ def make_vae_networks(latent_size: int,
     @hk.without_apply_rng
     @hk.transform
     def encoder_log_prob(x, z):
-        encoder = Encoder(latent_size, use_flow)
+        encoder = Encoder(latent_size, use_flow, use_conv)
         dist = encoder(x)
         return dist.log_prob(z)
 
     @hk.transform
     def encoder_sample_and_log_prob(x, sample_shape):
-        encoder = Encoder(latent_size, use_flow)
+        encoder = Encoder(latent_size, use_flow, use_conv)
         dist = encoder(x)
         return dist.sample_and_log_prob(seed=hk.next_rng_key(), sample_shape=sample_shape)
 

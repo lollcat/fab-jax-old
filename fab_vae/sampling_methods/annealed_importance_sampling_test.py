@@ -1,3 +1,4 @@
+import jax.random
 from absl.testing import absltest
 import distrax
 from fab.target_distributions.many_well import ManyWellEnergy
@@ -55,7 +56,10 @@ class Test_HMC(absltest.TestCase):
         plt.title("points from AIS")
         plt.show()
 
-
-
-
-
+        # test that log weights thin the distribution appropriately
+        indices = jax.random.choice(jax.random.PRNGKey(0), log_w.shape[0],
+                                    p=jax.nn.softmax(log_w), shape=(1000,),
+                                    replace=True)
+        plt.plot(x[indices, 0], x[indices, 1], "o", alpha=0.3)
+        plt.title("points from AIS after resampling")
+        plt.show()
