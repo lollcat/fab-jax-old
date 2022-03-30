@@ -8,4 +8,4 @@ matplotlib
 hydra-core
 hydra-joblib-launcher
 joblib
-neural_testbed @ git+https://github.com/deepmind/neural_testbed.git
+
