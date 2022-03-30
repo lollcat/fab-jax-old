@@ -13,7 +13,7 @@ from tqdm import tqdm
 import pathlib
 import matplotlib.pyplot as plt
 
-from fab.types_ import TargetLogProbFunc, HaikuDistribution
+from fab.types import TargetLogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
