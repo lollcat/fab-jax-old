@@ -14,7 +14,7 @@ import pathlib
 import matplotlib.pyplot as plt
 
 from fab.types import TargetLogProbFunc, HaikuDistribution
-from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 
@@ -54,10 +54,8 @@ class AgentFAB:
         self.plotter = plotter
         self.evaluator = evaluator
         self.logger = logger
-        self.annealed_importance_sampler = AnnealedImportanceSampler(learnt_distribution,
-                                                                     target_log_prob,
-                                                                     n_intermediate_distributions,
-                                                                     **AIS_kwargs)
+        self.annealed_importance_sampler = AnnealedImportanceSampler(dim=self.learnt_distribution.dim,
+            n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
         self.optimizer = optimizer
         self.state = self.init_state(seed)
 
@@ -123,10 +121,19 @@ class AgentFAB:
     @partial(jax.jit, static_argnums=(0,1))
     def step(self, batch_size: int, state: State) -> Tuple[State, Info]:
         key, subkey = jax.random.split(state.key)
+        def base_log_prob(x):
+            return self.learnt_distribution.log_prob.apply(
+                state.learnt_distribution_params, x)
+        x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
+                state.learnt_distribution_params, rng=state.key,
+            sample_shape=(batch_size,))
         x_ais, log_w_ais, transition_operator_state, ais_info = \
             self.annealed_importance_sampler.run(
-                batch_size, subkey, state.learnt_distribution_params,
-                state.transition_operator_state)
+                x_base, log_q_x_base, subkey,
+                state.transition_operator_state,
+                base_log_prob=base_log_prob,
+                target_log_prob=self.target_log_prob
+            )
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_ais, log_w_ais, state.learnt_distribution_params,
                         state.optimizer_state)
@@ -153,18 +160,24 @@ class AgentFAB:
         to prevent overloading the GPU."""
         n_inner_batch = outer_batch_size // inner_batch_size
 
+        def base_log_prob(x):
+            return self.learnt_distribution.log_prob.apply(
+                state.learnt_distribution_params, x)
+
         def scan_func(carry, x):
             key = carry
             key, subkey = jax.random.split(key)
-            # get log_w from flow
-            x, log_q = self.learnt_distribution.sample_and_log_prob.apply(
-            state.learnt_distribution_params, rng=subkey, sample_shape=(inner_batch_size,))
-            log_w = self.target_log_prob(x) - log_q
-            # get ais log_w
-            _, log_w_ais, _, _ = \
+            x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
+                state.learnt_distribution_params, rng=state.key,
+                sample_shape=(inner_batch_size,))
+            log_w = self.target_log_prob(x_base) - log_q_x_base
+            x_ais, log_w_ais, transition_operator_state, ais_info = \
                 self.annealed_importance_sampler.run(
-                    inner_batch_size, subkey, state.learnt_distribution_params,
-                    state.transition_operator_state)
+                    x_base, log_q_x_base, subkey,
+                    state.transition_operator_state,
+                    base_log_prob=base_log_prob,
+                    target_log_prob=self.target_log_prob
+                )
             return key, (log_w_ais, log_w)
 
         _, (log_w_ais, log_w) = jax.lax.scan(scan_func, state.key, jnp.arange(n_inner_batch))
