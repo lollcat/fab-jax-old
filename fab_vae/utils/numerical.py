@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import chex
+import numpy as np
 
 def remove_inf_and_nan(z_samples: chex.Array, log_w_ais: chex.Array):
   valid_samples = jnp.isfinite(log_w_ais) & jnp.all(jnp.isfinite(z_samples), axis=-1)
@@ -7,4 +8,4 @@ def remove_inf_and_nan(z_samples: chex.Array, log_w_ais: chex.Array):
   z_samples = jnp.where(valid_samples[..., None].repeat(z_samples.shape[-1], axis=-1),
                         z_samples, jnp.zeros_like(z_samples))
   log_w_ais = jnp.where(valid_samples, log_w_ais, -jnp.ones_like((log_w_ais)) * float("inf"))
-  return z_samples, log_w_ais
+  return z_samples, log_w_ais, jnp.sum(~valid_samples) / np.prod(valid_samples.shape)

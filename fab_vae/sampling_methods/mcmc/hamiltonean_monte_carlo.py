@@ -39,7 +39,7 @@ class Info(NamedTuple):
 class HamiltoneanMonteCarlo:
     def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 initial_step_size: float = 1.0, lr=1e-3, max_grad=1e3):
+                 initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.n_intermediate_distributions = n_intermediate_distributions

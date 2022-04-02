@@ -8,6 +8,8 @@ import jax
 import tensorflow_datasets as tfds
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import os
+import pickle
 
 from fab.utils.logging import ListLogger, to_numpy, Logger
 from fab.utils.plotting import plot_history
@@ -17,7 +19,7 @@ from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
 from fab_vae.models.networks import make_vae_networks
 from fab_vae.utils.numerical import remove_inf_and_nan
 from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
-
+from fab.utils.plotting import plot_contours_2D
 
 
 class VAE:
@@ -28,6 +30,7 @@ class VAE:
             use_flow: bool = True,
             use_conv: bool = False,
             lr: float = 1e-3,
+            max_grad_norm: float = 1.0,
             batch_size: int = 64,
             seed: int = 0,
             n_samples_z_train: int = 10,
@@ -43,9 +46,12 @@ class VAE:
             use_flow=use_flow,
             use_conv=use_conv
         )
+        self.lr = lr
         self.latent_size = latent_size
         self.use_flow = use_flow
-        self.optimizer = optax.adam(lr)
+        self.optimizer = optax.chain(optax.zero_nans(),
+                            optax.clip_by_global_norm(max_grad_norm),
+                            optax.adam(lr))
         self.batch_size = batch_size
         self.seed = seed
         self.logger = logger
@@ -82,14 +88,19 @@ class VAE:
             x_batch: chex.Array,
             n_samples_z) -> AISOutput:
 
+
         def ais_forward_inner(rng_key: chex.PRNGKey, x: chex.Array):
             key1, key2 = jax.random.split(rng_key)
+
             def base_log_prob(z):
                 return self.vae_networks.encoder_network.log_prob.apply(state.params.encoder, x, z)
 
             def target_log_prob(z):
-                return self.vae_networks.prior_log_prob(z) + self.vae_networks.decoder_log_prob.apply(
+                log_p_z = self.vae_networks.prior_log_prob(z)
+                log_p_x_given_z = self.vae_networks.decoder_log_prob.apply(
                     state.params.decoder, x, z)
+                chex.assert_equal_shape((log_p_z, log_p_x_given_z))
+                return log_p_z + log_p_x_given_z
 
             z_base, log_q_z_base = self.vae_networks.encoder_network.sample_and_log_prob.apply(
                 state.params.encoder, key1, x, sample_shape=(n_samples_z,))
@@ -106,6 +117,8 @@ class VAE:
             jax.vmap(ais_forward_inner, in_axes=(0, 0))(key_batch, x_batch)
         info, transition_operator_state = jax.tree_map(lambda x: jnp.mean(x, axis=0),
                                                        (info, transition_operator_state))
+        z_ais, log_w_ais, invalid_sample_frac = remove_inf_and_nan(z_ais, log_w_ais)
+        info.update(invalid_sample_frac=invalid_sample_frac)
         ais_output = AISOutput(z_ais=z_ais, log_w_ais=log_w_ais,
                                transition_operator_state=transition_operator_state, info=info)
         return ais_output
@@ -119,26 +132,29 @@ class VAE:
         return jnp.mean(jax.nn.logsumexp(log_p_x_given_z + log_p_z - log_q_z_given_x, axis=0)) - \
                jnp.log(n_samples_z)
 
-    def estimate_marginal_log_lik_ais(self, state, x, n_samples_z):
-        ais_output = self.ais_forward(state, x,
-                                      n_samples_z=n_samples_z)
-        return jnp.mean(jax.nn.logsumexp(ais_output.log_w_ais, axis=1)) - jnp.log(n_samples_z)
+    def eval_with_ais(self, state, x, n_samples_z) -> Info:
+        ais_output = self.ais_forward(state, x, n_samples_z=n_samples_z)
+        marg_log_lik = jnp.mean(jax.nn.logsumexp(ais_output.log_w_ais, axis=1)) - jnp.log(n_samples_z)
+        info = {"marginal_log_lik_ais": marg_log_lik}
+        info.update(ess_base=ais_output.info["ess_base"],
+                    ess_ais=ais_output.info["ess_ais"])
+        return info
 
     def fab_loss_fn(self, params: Params, z_ais_batch: chex.Array, log_w_ais_batch: chex.Array,
                     x_batch: chex.Array):
-        z_ais_batch, log_w_ais_batch = remove_inf_and_nan(z_ais_batch, log_w_ais_batch)
-
         def inner_loss_fn(z_ais: chex.Array, log_w_ais: chex.Array, x: chex.Array) -> \
                 Tuple[jnp.ndarray, Info]:
             chex.assert_shape(z_ais, (self.n_samples_z_train, self.latent_size))
             chex.assert_shape(log_w_ais, (self.n_samples_z_train,))
-            log_p_z_given_x = self.vae_networks.encoder_network.log_prob.apply(params.encoder, x,
+            log_q_z_given_x = self.vae_networks.encoder_network.log_prob.apply(params.encoder, x,
                                                                                z_ais)
             log_p_x_z = self.vae_networks.decoder_log_prob.apply(params.decoder, x, z_ais) + \
                         self.vae_networks.prior_log_prob(z_ais)
-            chex.assert_equal_shape((log_p_x_z, log_p_z_given_x, log_w_ais))
-            decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
-            encoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_z_given_x)
+            chex.assert_equal_shape((log_p_x_z, log_q_z_given_x, log_w_ais))
+            # decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
+            decoder_loss = jax.nn.logsumexp(log_w_ais +
+                            jax.lax.stop_gradient(log_p_x_z) - log_q_z_given_x)
+            encoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_z_given_x)
             info = {}
             info.update(decoder_loss=decoder_loss, encoder_loss=encoder_loss)
             return encoder_loss + decoder_loss, info
@@ -202,6 +218,8 @@ class VAE:
             grads = jax.tree_map(lambda x, y: x + y, grads_fab, grads_vanilla)
         else: #  self.loss_type == "vanilla"
             grads = grads_vanilla
+
+        if not "transition_operator_state" in locals():
             transition_operator_state = state.transition_operator_state
         updates, new_opt_state = self.optimizer.update(grads, state.opt_state)
         new_params = optax.apply_updates(state.params, updates)
@@ -224,19 +242,12 @@ class VAE:
         vanilla_loss, vanilla_info = self.vanilla_loss_fn(state.params, batch["image"],
                                                           state.rng_key)
         info.update(vanilla_info)
-        # ais_output = self.ais_forward(state, batch["image"],
-        #                               n_samples_z=self.n_samples_z_test)
-        # fab_loss, fab_info = self.fab_loss_fn(state.params, ais_output.z_ais,
-        #                                       ais_output.log_w_ais, batch["image"])
-        # info.update(fab_info)
         marginal_log_lik_vanilla = self.estimate_marginal_log_lik_vanilla(state, batch["image"],
                                                                           self.n_samples_z_test)
-        info.update(marginal_log_lik_vanilla = marginal_log_lik_vanilla)
+        info.update(marginal_log_lik_vanilla=marginal_log_lik_vanilla)
         if self.ais_eval:
-            marginal_log_lik_ais = self.estimate_marginal_log_lik_ais(state,
-                                                                      batch["image"],
-                                                                      self.n_samples_z_test)
-            info.update(marginal_log_lik_ais=marginal_log_lik_ais)
+            ais_info = self.eval_with_ais(state, batch["image"], self.n_samples_z_test)
+            info.update(ais_info)
         return info
 
 
@@ -263,19 +274,77 @@ class VAE:
             self.logger.write(to_numpy(info))
 
 
+    def save(self, path: str):
+        with open(os.path.join(path, "state.pkl"), "wb") as f:
+            pickle.dump(self.state, f)
+
+    def load(self, path: str):
+        self.state = pickle.load(open(os.path.join(path, "state.pkl"), "rb"))
+
+    def visualise_model(self, state, x, n_samples_z = 100, ax1 = None, ax2=None):
+        key = jax.random.PRNGKey(0)
+
+
+        def target_log_prob(z):
+            log_p_z = self.vae_networks.prior_log_prob(z)
+            log_p_x_given_z = self.vae_networks.decoder_log_prob.apply(
+                state.params.decoder, x, z)
+            chex.assert_equal_shape((log_p_z, log_p_x_given_z))
+            return log_p_z + log_p_x_given_z
+
+        def base_log_prob(z):
+            return self.vae_networks.encoder_network.log_prob.apply(state.params.encoder, x, z)
+
+        z_base, log_q_z_base = self.vae_networks.encoder_network.sample_and_log_prob.apply(
+            state.params.encoder, key, x, sample_shape=(n_samples_z,))
+
+
+        z_ais, log_w_ais, new_transition_operator_state, info = \
+            self.ais.run(z_base, log_q_z_base,
+                    key,
+                    state.transition_operator_state,
+                    base_log_prob=base_log_prob,
+                    target_log_prob=target_log_prob)
+
+        fig, axs = plt.subplots(1, 2)
+        bound = float(jnp.max(jnp.abs(z_ais)) + 1)
+        plot_contours_2D(target_log_prob, ax=axs[0], bound=bound, levels=50)
+        axs[0].plot(z_base[:, 0], z_base[:, 1], "o", alpha=0.5)
+
+        plot_contours_2D(target_log_prob, ax=axs[1], bound=bound, levels=50)
+        axs[1].plot(z_ais[:, 0], z_ais[:, 1], "o", alpha=0.5)
+        plt.show()
+
+        z_sample_indx = 1
+        fig, axs = plt.subplots(1, 3)
+        axs[0].imshow(x, cmap="gray")
+        dist_x_given_z_base = self.vae_networks.decoder_forward.apply(state.params.decoder,
+                                                                      z_base[z_sample_indx])
+        x_base = dist_x_given_z_base.sample(seed=key)
+        axs[1].imshow(x_base, cmap="gray")
+        dist_x_given_z_ais = self.vae_networks.decoder_forward.apply(state.params.decoder,
+                                                                      z_ais[z_sample_indx])
+        x_ais = dist_x_given_z_ais.sample(seed=key)
+        axs[2].imshow(x_ais, cmap="gray")
+        plt.show()
+
+
 
 if __name__ == '__main__':
     import numpy as np
-    loss_type = "fab_decoder" # "fab_decoder", "fab_combo", "vanilla", "fab"
+    loss_type = "vanilla"  # "fab_decoder", "fab_combo", "vanilla", "fab"
     print(loss_type)
     vae = VAE(use_flow=False,
-              batch_size=24,
+              batch_size=128,
+              latent_size=2,
               loss_type=loss_type,
               n_samples_z_train=20,
               n_samples_test=20,
               seed=0,
-              ais_eval=True)
-    vae.train(n_step=5000, eval_freq=50)
+              ais_eval=False,
+              lr=1e-4)
+
+    vae.train(n_step=5000, eval_freq=1000)
 
     plot_history(vae.logger.history)
     plt.show()

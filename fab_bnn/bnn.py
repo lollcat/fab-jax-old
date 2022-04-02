@@ -7,3 +7,4 @@ from neural_testbed import leaderboard
 
 if __name__ == '__main__':
     pass
+# TODO: add neural_testbed @ git+https://github.com/deepmind/neural_testbed.git to req

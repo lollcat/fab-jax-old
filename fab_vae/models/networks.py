@@ -76,6 +76,15 @@ def make_vae_networks(latent_size: int,
             reinterpreted_batch_ndims=len(output_shape))  # 3 non-batch dims
         return likelihood_distrib.log_prob(x)
 
+    @hk.without_apply_rng
+    @hk.transform
+    def decoder_forward(z):
+        logits = Decoder(output_shape)(z)
+        likelihood_distrib = distrax.Independent(
+            distrax.Bernoulli(logits=logits),
+            reinterpreted_batch_ndims=len(output_shape))  # 3 non-batch dims
+        return likelihood_distrib
+
     def init(rng_key: chex.PRNGKey) -> Params:
         key1, key2 = jax.random.split(rng_key)
         dummy_x = jnp.zeros(output_shape)
@@ -89,7 +98,9 @@ def make_vae_networks(latent_size: int,
     network = VAENetworks(encoder_network=encoder_net,
                           decoder_log_prob=decoder_log_prob,
                           prior_log_prob=prior_z.log_prob,
-                          init=init)
+                          init=init,
+                          prior_sample_and_log_prob=prior_z.sample_and_log_prob,
+                          decoder_forward=decoder_forward)
     return network
 
 

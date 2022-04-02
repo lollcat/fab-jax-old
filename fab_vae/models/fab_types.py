@@ -1,6 +1,7 @@
 from typing import Any, Iterator, Mapping, NamedTuple, Sequence, Tuple, Dict, Callable
 
 import chex
+import distrax
 import haiku as hk
 
 Info = Mapping[str, chex.Array]
@@ -27,6 +28,8 @@ class VAENetworks(NamedTuple):
   encoder_network: EncoderNetworks
   prior_log_prob: Callable[[chex.Array], chex.Array]
   decoder_log_prob: hk.Transformed
+  prior_sample_and_log_prob: Callable
+  decoder_forward: Callable
 
 
 class AISOutput(NamedTuple):
