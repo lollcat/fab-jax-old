@@ -34,6 +34,7 @@ class Test_AgentFAB(absltest.TestCase):
     batch_size = 128
     n_iter = int(1e4)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
+    style = "new"
     n_intermediate_distributions: int = 2
     max_grad_norm = 1.0
     lr = 5e-4
@@ -52,7 +53,8 @@ class Test_AgentFAB(absltest.TestCase):
                          AIS_kwargs=AIS_kwargs,
                          optimizer=optimizer,
                          loss_type=loss_type,
-                         plotter=plotter)
+                         plotter=plotter,
+                         style=style)
 
     def test_fab_agent(self):
         self.fab_agent.run(n_iter=self.n_iter, batch_size=self.batch_size, n_plots=self.n_plots,

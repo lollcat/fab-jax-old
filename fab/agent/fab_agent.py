@@ -40,6 +40,7 @@ class AgentFAB:
                  target_log_prob: TargetLogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
+                 style: str = "vanilla",
                  AIS_kwargs: Dict = {},
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
@@ -50,7 +51,9 @@ class AgentFAB:
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
         assert loss_type in ["alpha_2_div", "forward_kl"]
+        assert style in ["vanilla", "new"]
         self.loss_type = loss_type
+        self.style = style
         self.plotter = plotter
         self.evaluator = evaluator
         self.logger = logger
@@ -75,12 +78,42 @@ class AgentFAB:
                       optimizer_state=optimizer_state)
         return state
 
+    def get_base_log_prob(self, params):
+        def base_log_prob(x):
+            return self.learnt_distribution.log_prob.apply(
+                params, x)
+        return base_log_prob
+
+
+    def get_target_log_prob(self, params):
+        if self.style == "vanilla":
+            return self.target_log_prob
+        else: # fancy new loss
+            if self.loss_type == "alpha_2_div":
+                def target_log_prob(x):
+                    return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
+                        params, x)
+            elif self.loss_type == "forward_kl":
+                def target_log_prob(x):
+                    return self.target_log_prob(x) + \
+                           jnp.log(
+                               self.target_log_prob(x) -
+                               self.learnt_distribution.log_prob.apply(params, x)
+                           )
+        return target_log_prob
+
 
     def loss(self, x_samples, log_w_ais, learnt_distribution_params):
-        if self.loss_type == "alpha_2_div":
-            return self.alpha_2_loss(x_samples, log_w_ais, learnt_distribution_params)
+        if self.style == "vanilla":
+            if self.loss_type == "alpha_2_div":
+                return self.alpha_2_loss(x_samples, log_w_ais, learnt_distribution_params)
+            else:
+                return self.forward_kl_loss(x_samples, log_w_ais, learnt_distribution_params)
         else:
-            return self.forward_kl_loss(x_samples, log_w_ais, learnt_distribution_params)
+            if self.loss_type == "alpha_2_div":
+                return self.alpha_2_loss_fancy(x_samples, log_w_ais, learnt_distribution_params)
+            else:
+                raise NotImplementedError
 
 
     def alpha_2_loss(self, x_samples, log_w_ais, learnt_distribution_params):
@@ -105,6 +138,32 @@ class AgentFAB:
         log_w = log_p_x - log_q_x
         return - jnp.mean(w_ais * log_q_x), (log_w, log_q_x, log_p_x)
 
+    def alpha_2_loss_fancy(self, x_samples, log_w_ais, learnt_distribution_params):
+        """Minimise upper bound of $\alpha$-divergence with $\alpha=2$ using ais dist with target of
+        p^2 / q. """
+        valid_samples = jnp.isfinite(log_w_ais) & jnp.all(jnp.isfinite(x_samples), axis=-1)
+        # remove invalid x_samples so we don't get NaN gradients.
+        x_samples = jnp.where(valid_samples[:, None].repeat(x_samples.shape[-1], axis=-1),
+                              x_samples, jnp.zeros_like(x_samples))
+        z_base, log_q_z_base, log_det_reverse = self.learnt_distribution.base_z_log_prob_and_log_det.apply(
+            jax.lax.stop_gradient(learnt_distribution_params), x_samples)
+        x_reparam, log_det_forward = self.learnt_distribution.x_and_log_det_forward(
+            learnt_distribution_params, z_base)
+        chex.assert_trees_all_close((log_det_reverse, x_samples), (-log_det_forward, x_reparam))
+        log_q_x = log_q_z_base - log_det_forward
+        log_p_x = self.target_log_prob(x_reparam)
+        log_q_e = jax.lax.stop_gradient(log_q_z_base)
+        log_p_e = jax.lax.stop_gradient(log_p_x + log_det_reverse)
+        log_w_x = log_p_x - log_q_x
+        log_w_e = log_q_e - log_p_e
+        differentiated_inner_term = 2*log_w_x
+        blocked_epsion_log_w_term = 2*log_w_e
+        inner_term = log_w_ais + blocked_epsion_log_w_term + differentiated_inner_term
+        # give invalid x_sample terms 0 importance weight.
+        inner_term = jnp.where(valid_samples, inner_term, -jnp.ones_like(inner_term) * float("inf"))
+        alpha_2_loss = jax.nn.logsumexp(inner_term, axis=0)
+        return alpha_2_loss, (log_w_x, log_q_x, log_p_x)
+
 
     def update(self, x_ais, log_w_ais, learnt_distribution_params, opt_state):
         (alpha_2_loss, (log_w, log_q_x, log_p_x)), grads = jax.value_and_grad(
@@ -121,9 +180,9 @@ class AgentFAB:
     @partial(jax.jit, static_argnums=(0,1))
     def step(self, batch_size: int, state: State) -> Tuple[State, Info]:
         key, subkey = jax.random.split(state.key)
-        def base_log_prob(x):
-            return self.learnt_distribution.log_prob.apply(
-                state.learnt_distribution_params, x)
+        # get base and target log prob
+        base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
+        target_log_prob = self.get_target_log_prob(state.learnt_distribution_params)
         x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
                 state.learnt_distribution_params, rng=state.key,
             sample_shape=(batch_size,))
@@ -132,7 +191,7 @@ class AgentFAB:
                 x_base, log_q_x_base, subkey,
                 state.transition_operator_state,
                 base_log_prob=base_log_prob,
-                target_log_prob=self.target_log_prob
+                target_log_prob=target_log_prob
             )
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_ais, log_w_ais, state.learnt_distribution_params,
@@ -157,26 +216,24 @@ class AgentFAB:
     @partial(jax.jit, static_argnums=(0, 1, 2))
     def get_eval_info(self, outer_batch_size: int, inner_batch_size: int, state: State) -> Info:
         """Evaluate the model. We split outer_batch_size into chunks of size inner_batch_size
-        to prevent overloading the GPU."""
+        to prevent overloading the GPU.
+        """
         n_inner_batch = outer_batch_size // inner_batch_size
-
-        def base_log_prob(x):
-            return self.learnt_distribution.log_prob.apply(
-                state.learnt_distribution_params, x)
-
+        base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
+        target_log_prob = self.target_log_prob
         def scan_func(carry, x):
             key = carry
             key, subkey = jax.random.split(key)
             x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
                 state.learnt_distribution_params, rng=state.key,
                 sample_shape=(inner_batch_size,))
-            log_w = self.target_log_prob(x_base) - log_q_x_base
+            log_w = target_log_prob(x_base) - log_q_x_base
             x_ais, log_w_ais, transition_operator_state, ais_info = \
                 self.annealed_importance_sampler.run(
                     x_base, log_q_x_base, subkey,
                     state.transition_operator_state,
                     base_log_prob=base_log_prob,
-                    target_log_prob=self.target_log_prob
+                    target_log_prob=target_log_prob
                 )
             return key, (log_w_ais, log_w)
 
@@ -255,3 +312,5 @@ class AgentFAB:
 
     def load(self, path: str):
         self.state = pickle.load(open(os.path.join(path, "state.pkl"), "rb"))
+
+
