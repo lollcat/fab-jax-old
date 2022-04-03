@@ -13,11 +13,11 @@ Array = jnp.ndarray
 @hk.without_apply_rng
 @hk.transform
 def forward(x):
-    act_norm = ActNormBijector(x[0].shape)
+    act_norm = ActNormBijector(x[0].shape, dtype=jnp.float32)
     return act_norm.forward_and_log_det(x)
 
 def make_flow_model(event_shape):
-    flow = ActNormBijector(event_shape)
+    flow = ActNormBijector(event_shape, dtype=jnp.float32)
     base_distribution = distrax.MultivariateNormalDiag(jnp.zeros(event_shape), jnp.ones(event_shape))
     return distrax.Transformed(base_distribution, flow)
 
