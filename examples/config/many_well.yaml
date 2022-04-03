@@ -21,7 +21,7 @@ fab:
 training:
   seed: 0
   lr: 2e-4
-  max_grad_norm: 5.0
+  max_grad_norm: null
   batch_size: 1024
   n_iterations: 200_000
   use_64_bit: true

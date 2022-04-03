@@ -96,9 +96,13 @@ def _run(cfg: DictConfig):
 
     target = ManyWellEnergy(dim=dim)
     flow = setup_flow(cfg)
-    optimizer = optax.chain(optax.zero_nans(),
-                            optax.clip_by_global_norm(cfg.training.max_grad_norm),
-                            optax.adamw(cfg.training.lr))
+    if cfg.training.max_grad_norm is not None:
+        optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip_by_global_norm(cfg.training.max_grad_norm),
+                                optax.adamw(cfg.training.lr))
+    else:
+        optimizer = optax.chain(optax.zero_nans(),
+                                optax.adamw(cfg.training.lr))
     assert cfg.fab.transition_operator.type == "HMC"
     AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
         "additional_transition_operator_kwargs":
