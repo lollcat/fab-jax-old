@@ -1,6 +1,8 @@
+chex==0.0.9
+dm-haiku==0.0.5
+numpy==1.19.5
+optax==0.0.9
 distrax
-dm-haiku
-optax
 wandb
 tqdm
 pandas
