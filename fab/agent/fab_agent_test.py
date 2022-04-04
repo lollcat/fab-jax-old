@@ -11,7 +11,7 @@ from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2
 
 
 def plotter(fab_agent, log_prob_2D):
-    batch_size = 500
+    batch_size = 100
 
     @jax.jit
     def get_info(state):
@@ -66,6 +66,7 @@ class Test_AgentFAB(absltest.TestCase):
     loss_type = "new"  # "forward_kl"  "alpha_2_div" "new"
     style = "new"  # "vanilla"  "new"
     n_intermediate_distributions: int = 4
+    soften_ais_weights = True
     use_reparam_loss = False
     max_grad_norm = 1.0
     lr = 1e-3
@@ -86,7 +87,8 @@ class Test_AgentFAB(absltest.TestCase):
                          loss_type=loss_type,
                          plotter=plotter,
                          style=style,
-                         add_reverse_kl_loss=use_reparam_loss
+                         add_reverse_kl_loss=use_reparam_loss,
+                         soften_ais_weights=soften_ais_weights
                          )
 
     def test_fab_agent(self):

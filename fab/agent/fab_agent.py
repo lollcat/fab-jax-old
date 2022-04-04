@@ -40,6 +40,7 @@ class AgentFAB:
                  target_log_prob: TargetLogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
+                 soften_ais_weights: bool = True,
                  style: str = "vanilla",
                  add_reverse_kl_loss: bool = True,
                  AIS_kwargs: Dict = {},
@@ -63,6 +64,8 @@ class AgentFAB:
         self.optimizer = optimizer
         self.state = self.init_state(seed)
         self.add_reverse_kl_loss = add_reverse_kl_loss
+        self.soften_ais_weights = soften_ais_weights
+        self.batch_size: int
 
     def init_state(self, seed) -> State:
         key = jax.random.PRNGKey(seed)
@@ -90,7 +93,7 @@ class AgentFAB:
     def get_target_log_prob(self, params):
         if self.style == "vanilla":
             return self.target_log_prob
-        elif self.loss_type ==  "re-param-style":
+        elif self.loss_type == "re-param-style":
             if self.loss_type == "alpha_2_div" or "sample_prob":
                 def target_log_prob(x):
                     return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
@@ -127,7 +130,10 @@ class AgentFAB:
             else:
                 raise NotImplementedError
         else:
-            ais_loss, (log_w, log_q_x, log_p_x) = self.new_loss(x_samples, log_w_ais, learnt_distribution_params)
+            if self.loss_type == "new":
+                ais_loss, (log_w, log_q_x, log_p_x) = self.new_loss(x_samples, log_w_ais, learnt_distribution_params)
+            else:
+                raise NotImplementedError
 
         loss = ais_loss
         if self.add_reverse_kl_loss:
@@ -150,10 +156,8 @@ class AgentFAB:
         # below two lines are just for aux info, not used, should be removed later
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
-
         def loss_func(x):
-            return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
-                learnt_distribution_params, x)
+            return - self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
         w_ais = jax.nn.softmax(log_w_ais, axis=0)
         loss = loss_func(x_samples)
         return jnp.mean(w_ais * loss), (log_p_x - log_q_x, log_q_x, log_p_x)
@@ -245,6 +249,8 @@ class AgentFAB:
                 base_log_prob=base_log_prob,
                 target_log_prob=target_log_prob
             )
+        if self.soften_ais_weights:
+            log_w_ais = self.clip_log_w_ais(log_w_ais)
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_ais, log_w_ais, state.learnt_distribution_params,
                         state.optimizer_state, subkey3)
@@ -253,6 +259,19 @@ class AgentFAB:
                       transition_operator_state=transition_operator_state)
         info.update(ais_info)
         return state, info
+
+    @partial(jax.jit, static_argnums=0)
+    def clip_log_w_ais(self, log_w_ais):
+        # splits = jnp.linspace(0, self.batch_size, n_splits, dtype=jnp.int32)[1:-1]
+        # a = jnp.split(a, splits)
+        # top_log_w = jnp.stack(
+        #     jax.tree_map(
+        #         jnp.max, a))
+        # max_clip_low_w = jnp.min(top_log_w)
+        top_log_w = jnp.stack(self.top_k_func(log_w_ais))
+        max_clip_low_w = jnp.min(top_log_w)  # get medium sized log_w
+        log_w_ais = jnp.clip(log_w_ais, a_max=max_clip_low_w)
+        return log_w_ais
 
     @staticmethod
     def get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss) -> Info:
@@ -312,6 +331,13 @@ class AgentFAB:
             checkpoints_dir: str = "tmp/chkpts",
             logging_freq: int = 1) -> None:
         """Train the fab model."""
+        self.batch_size = batch_size
+        max_frac = 0.05
+        k = int(max_frac * self.batch_size)
+        @jax.jit
+        def top_k_func(a):
+            return jax.lax.approx_max_k(a, k)
+        self.top_k_func = top_k_func
         if save:
             pathlib.Path(plots_dir).mkdir(exist_ok=True, parents=True)
             pathlib.Path(checkpoints_dir).mkdir(exist_ok=True, parents=True)
