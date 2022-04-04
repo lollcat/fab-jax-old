@@ -36,10 +36,13 @@ class VAE:
             n_samples_z_train: int = 10,
             n_samples_test: int = 20,
             ais_eval: bool = True,
+            n_updates_per_ais: int = 1,
             n_ais_dist: int = 4,
-            logger: Logger = ListLogger()
+            logger: Logger = ListLogger(),
+            fab_loss_type: str = "forward_kl"
     ):
         self.loss_type = loss_type
+        self.n_updates_per_ais = n_updates_per_ais
         self.vae_networks = make_vae_networks(
             latent_size=latent_size,
             output_shape=MNIST_IMAGE_SHAPE,
@@ -67,6 +70,7 @@ class VAE:
             self.use_ais: bool = False
         self.ais_eval = ais_eval
         self.state = self.init_state(seed)
+        self.fab_loss_type = fab_loss_type
 
 
     def init_state(self, seed) -> State:
@@ -151,9 +155,13 @@ class VAE:
             log_p_x_z = self.vae_networks.decoder_log_prob.apply(params.decoder, x, z_ais) + \
                         self.vae_networks.prior_log_prob(z_ais)
             chex.assert_equal_shape((log_p_x_z, log_q_z_given_x, log_w_ais))
-            # decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
-            decoder_loss = jax.nn.logsumexp(log_w_ais +
-                            jax.lax.stop_gradient(log_p_x_z) - log_q_z_given_x)
+            if self.fab_loss_type == "forward_kl":
+                decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
+            elif self.fab_loss_type == "alpha_2_div":
+                decoder_loss = jax.nn.logsumexp(log_w_ais +
+                                jax.lax.stop_gradient(log_p_x_z) - log_q_z_given_x)
+            else:
+                raise NotImplementedError
             encoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_z_given_x)
             info = {}
             info.update(decoder_loss=decoder_loss, encoder_loss=encoder_loss)
@@ -200,34 +208,40 @@ class VAE:
         key, subkey = jax.random.split(state.rng_key)
         info = {}
         if self.use_ais:
-            grads_fab, transition_operator_state, info_fab = self.get_fab_grad(state, batch)
-            chex.assert_trees_all_equal_shapes(state.transition_operator_state,
-                                              transition_operator_state)
-            info.update(info_fab)
-        if self.use_vanilla:
-            grads_vanilla, info_vanilla = jax.grad(self.vanilla_loss_fn, argnums=0,
-                                                   has_aux=True)(state.params,
-                                                                 batch["image"],
-                                                                 subkey)
-            info.update(info_vanilla)
-        if self.loss_type == "fab":
-            grads = grads_fab
-        elif self.loss_type == "fab_decoder":
-            grads = Params(encoder=grads_vanilla.encoder, decoder=grads_fab.decoder)
-        elif self.loss_type == "fab_combo":
-            grads = jax.tree_map(lambda x, y: x + y, grads_fab, grads_vanilla)
-        else: #  self.loss_type == "vanilla"
-            grads = grads_vanilla
+            ais_output: AISOutput = self.ais_forward(state, batch["image"], self.n_samples_z_train)
+        for i in range(self.n_updates_per_ais):
+            if self.use_ais:
+                (loss_fab, info), grads_fab = jax.value_and_grad(self.fab_loss_fn, has_aux=True,
+                                                                 argnums=0)(
+                    state.params, ais_output.z_ais, ais_output.log_w_ais, batch["image"])
+                ais_info = {"_ais_" + key: val for key, val in ais_output.info.items()}
+                info.update(ais_info)
+                transition_operator_state = ais_output.transition_operator_state
+                chex.assert_trees_all_equal_shapes(state.transition_operator_state,
+                                                  transition_operator_state)
+            if self.use_vanilla:
+                grads_vanilla, info_vanilla = jax.grad(self.vanilla_loss_fn, argnums=0,
+                                                       has_aux=True)(state.params,
+                                                                     batch["image"],
+                                                                     subkey)
+                info.update(info_vanilla)
+            if self.loss_type == "fab":
+                grads = grads_fab
+            elif self.loss_type == "fab_decoder":
+                grads = Params(encoder=grads_vanilla.encoder, decoder=grads_fab.decoder)
+            elif self.loss_type == "fab_combo":
+                grads = jax.tree_map(lambda x, y: x + y, grads_fab, grads_vanilla)
+            else: #  self.loss_type == "vanilla"
+                grads = grads_vanilla
 
-        if not "transition_operator_state" in locals():
-            transition_operator_state = state.transition_operator_state
-        updates, new_opt_state = self.optimizer.update(grads, state.opt_state)
-        new_params = optax.apply_updates(state.params, updates)
-        # TODO: could be cleaner
-        chex.assert_trees_all_equal_shapes(state.params, new_params)
-        state = State(params=new_params, opt_state=new_opt_state,
-                      transition_operator_state=transition_operator_state,
-                      rng_key=key)
+            if not "transition_operator_state" in locals():
+                transition_operator_state = state.transition_operator_state
+            updates, new_opt_state = self.optimizer.update(grads, state.opt_state)
+            new_params = optax.apply_updates(state.params, updates)
+            chex.assert_trees_all_equal_shapes(state.params, new_params)
+            state = State(params=new_params, opt_state=new_opt_state,
+                          transition_operator_state=transition_operator_state,
+                          rng_key=key)
         return state, info
 
 
@@ -281,10 +295,10 @@ class VAE:
     def load(self, path: str):
         self.state = pickle.load(open(os.path.join(path, "state.pkl"), "rb"))
 
-    def visualise_model(self, state, x, n_samples_z = 100, ax1 = None, ax2=None):
+    def visualise_model(self, state, x, n_samples_z = 100,
+                        ax1 = None,
+                        ax2=None):
         key = jax.random.PRNGKey(0)
-
-
         def target_log_prob(z):
             log_p_z = self.vae_networks.prior_log_prob(z)
             log_p_x_given_z = self.vae_networks.decoder_log_prob.apply(
@@ -306,27 +320,27 @@ class VAE:
                     base_log_prob=base_log_prob,
                     target_log_prob=target_log_prob)
 
-        fig, axs = plt.subplots(1, 2)
+        if ax1 is None:
+            fig, ax1 = plt.subplots(1, 2)
         bound = float(jnp.max(jnp.abs(z_ais)) + 1)
-        plot_contours_2D(target_log_prob, ax=axs[0], bound=bound, levels=50)
-        axs[0].plot(z_base[:, 0], z_base[:, 1], "o", alpha=0.5)
+        plot_contours_2D(target_log_prob, ax=ax1[0], bound=bound, levels=50)
+        ax1[0].plot(z_base[:, 0], z_base[:, 1], "o", alpha=0.5)
 
-        plot_contours_2D(target_log_prob, ax=axs[1], bound=bound, levels=50)
-        axs[1].plot(z_ais[:, 0], z_ais[:, 1], "o", alpha=0.5)
-        plt.show()
+        plot_contours_2D(target_log_prob, ax=ax1[1], bound=bound, levels=50)
+        ax1[1].plot(z_ais[:, 0], z_ais[:, 1], "o", alpha=0.5)
 
         z_sample_indx = 1
-        fig, axs = plt.subplots(1, 3)
-        axs[0].imshow(x, cmap="gray")
+        if ax2 is None:
+            fig, ax2 = plt.subplots(1, 3)
+        ax2[0].imshow(x, cmap="gray")
         dist_x_given_z_base = self.vae_networks.decoder_forward.apply(state.params.decoder,
                                                                       z_base[z_sample_indx])
         x_base = dist_x_given_z_base.sample(seed=key)
-        axs[1].imshow(x_base, cmap="gray")
+        ax2[1].imshow(x_base, cmap="gray")
         dist_x_given_z_ais = self.vae_networks.decoder_forward.apply(state.params.decoder,
                                                                       z_ais[z_sample_indx])
         x_ais = dist_x_given_z_ais.sample(seed=key)
-        axs[2].imshow(x_ais, cmap="gray")
-        plt.show()
+        ax2[2].imshow(x_ais, cmap="gray")
 
 
 
