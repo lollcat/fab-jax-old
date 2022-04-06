@@ -3,22 +3,12 @@ from typing import Tuple
 from functools import partial
 import optax
 import chex
-import jax.numpy as jnp
 import jax
 import tensorflow_datasets as tfds
-from tqdm import tqdm
 import matplotlib.pyplot as plt
-import os
-import pickle
 
-from fab.utils.logging import ListLogger, to_numpy, Logger
-from fab.utils.plotting import plot_history
-
-from fab_vae.models.fab_types import VAENetworks, Params, Info, State, AISOutput
-from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
-from fab_vae.models.networks import make_vae_networks
-from fab_vae.utils.numerical import remove_inf_and_nan
-from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fab_vae.models.fab_types import Params, Info, State
+from fab_vae.utils.data import load_dataset, Batch
 from fab_vae.models.vae import VAE
 
 class VAE_encoder(VAE):
@@ -106,7 +96,8 @@ class VAE_encoder(VAE):
             grads = grads_vanilla.encoder
         if not "transition_operator_state" in locals():
             transition_operator_state = state.transition_operator_state
-        updates, new_opt_state = self.optimizer.update(grads, state.opt_state)
+        updates, new_opt_state = self.optimizer.update(grads, state.opt_state,
+                                                       params=state.params.encoder)
         new_params_encoder = optax.apply_updates(state.params.encoder, updates)
         state = State(params=Params(encoder=new_params_encoder,
                                     decoder=state.params.decoder),
@@ -116,68 +107,71 @@ class VAE_encoder(VAE):
         return state, info
 
 
+
+
+
+
 if __name__ == '__main__':
     # need x for plotting
     train_ds = load_dataset(tfds.Split.TRAIN, 10, shuffle=False)
     train_batch = next(train_ds)  # train
-    n_plot_images = 5
+    n_plot_images = 10
     plot_images = []
     for i in range(n_plot_images):
         plot_images.append(train_batch["image"][i])
 
+    def plotter(state):
+        fig1, ax1 = plt.subplots(n_plot_images, 3, figsize=(8, 3 * n_plot_images))
+        fig2, ax2 = plt.subplots(n_plot_images, 3, figsize=(8, 3 * n_plot_images))
+        ax1[0, 0].set_title("flow samples")
+        ax1[0, 1].set_title("ais samples")
+        ax1[0, 2].set_title("ais samples resampled")
+        ax2[0, 0].set_title("true image")
+        ax2[0, 1].set_title("encoder sample")
+        ax2[0, 2].set_title("ais sample")
+        for i in range(n_plot_images):
+            vae_enc.visualise_model(state, plot_images[i], ax1=ax1[i], ax2=ax2[i])
+        fig1.tight_layout()
+        # fig2.tight_layout()
+        fig1.show()
+        # fig2.show()
+        return fig1, fig2
+
     import numpy as np
     loss_type = "fab"  # ["fab", "fab_combo", "fab_decoder", "vanilla"]
-    n_z = 64
+    n_z = 32
+    clip_frac = None  # 0.05
+    n_ais_dist = 4
     batch_size = 24
-    n_updates_per_ais = 3
+    n_updates_per_ais = 1
+    n_flow_layers = 4
     use_trained_encoder = False
     use_flow = True
-    n_steps = 1000
+    n_steps = 200
+    plot_interval = 25
+    eval_freq = 99
+    lr = 1e-4
     vae_enc = VAE_encoder(
         loss_type=loss_type,
         n_samples_z_train=n_z,
         batch_size=batch_size,
-        lr=2e-4,
+        lr=lr,
         n_samples_test=100,
-        n_ais_dist=4,
+        n_ais_dist=n_ais_dist,
         use_trained_encoder=use_trained_encoder,
         use_flow=use_flow,
-        n_updates_per_ais=n_updates_per_ais
+        n_updates_per_ais=n_updates_per_ais,
+        n_flow_layers=n_flow_layers,
+        plotter = plotter,
+        clip_log_w_frac=clip_frac
     )
     print(n_z)
     print(loss_type)
     initial_state = vae_enc.state
-    fig1_pre, ax1_pre = plt.subplots(n_plot_images, 2, figsize=(8, 3*n_plot_images))
-    fig2_pre, ax2_pre = plt.subplots(n_plot_images, 3, figsize=(8, 3*n_plot_images))
-    ax1_pre[0, 0].set_title("flow samples")
-    ax1_pre[0, 1].set_title("ais samples")
-    ax2_pre[0, 0].set_title("true image")
-    ax2_pre[0, 1].set_title("encoder sample")
-    ax2_pre[0, 2].set_title("ais sample")
-    for i in range(n_plot_images):
-        vae_enc.visualise_model(vae_enc.state, plot_images[i], ax1=ax1_pre[i], ax2=ax2_pre[i])
-    fig1_pre.tight_layout()
-    fig1_pre.show()
-    fig2_pre.tight_layout()
-    fig2_pre.show()
-    vae_enc.train(n_step=n_steps, eval_freq=50)
+    vae_enc.train(n_step=n_steps, eval_freq=eval_freq, plot_freq=plot_interval)
     trained_state = vae_enc.state
-    fig1_post, ax1_post = plt.subplots(n_plot_images, 2, figsize=(8, 3*n_plot_images))
-    fig2_post, ax2_post = plt.subplots(n_plot_images, 3, figsize=(8, 3*n_plot_images))
-    ax1_post[0, 0].set_title("flow samples")
-    ax1_post[0, 1].set_title("ais samples")
-    ax2_post[0, 0].set_title("true image")
-    ax2_post[0, 1].set_title("encoder sample")
-    ax2_post[0, 2].set_title("ais sample")
-    for i in range(n_plot_images):
-        vae_enc.visualise_model(vae_enc.state, plot_images[i], ax1=ax1_post[i], ax2=ax2_post[i])
-    fig1_post.tight_layout()
-    fig1_post.show()
-    fig2_post.tight_layout()
-    fig2_post.show()
-    plot_history(vae_enc.logger.history)
-    plt.tight_layout()
-    plt.show()
+    vae_enc.plotter(trained_state)
+
     vae_enc.save(loss_type)
     print(np.asarray(vae_enc.logger.history["_ais_ess_base"])[0:5])
     print(np.asarray(vae_enc.logger.history["_ais_ess_base"])[-5:])

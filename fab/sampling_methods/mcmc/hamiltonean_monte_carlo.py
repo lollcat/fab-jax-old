@@ -3,11 +3,11 @@ import jax
 import optax
 from typing import NamedTuple
 from functools import partial
-from fab.types import Params
 import chex
+from fab.types import Params
 
+from fab_vae.types import LogProbFunc
 
-# TODO: types
 
 
 
@@ -37,17 +37,17 @@ class Info(NamedTuple):
 
 
 class HamiltoneanMonteCarlo:
-    def __init__(self, dim, n_intermediate_distributions, intermediate_target_log_prob_fn,
+    def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 initial_step_size: float = 1.0, lr=1e-3, max_grad=1e3):
+                 initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
-        self.intermediate_target_log_prob_fn = intermediate_target_log_prob_fn
         self.n_intermediate_distributions = n_intermediate_distributions
         self.step_tuning_method = step_tuning_method
         self.n_outer_steps = n_outer_steps
         self.n_inner_steps = n_inner_steps
         self._initial_step_size = initial_step_size
+        self.max_grad = max_grad
         if self.step_tuning_method == "gradient_based":
             self.lr = lr
         elif self.step_tuning_method == "p_accept":
@@ -55,15 +55,6 @@ class HamiltoneanMonteCarlo:
         else:
             raise NotImplementedError
 
-        def U(learnt_dist_params, q, i):
-            j = i + 1  # j is loop iter param in annealed_importance_sampling.py
-            return - self.intermediate_target_log_prob_fn(learnt_dist_params, q, j)
-
-        def grad_U(learnt_dist_params, q, j):
-            return jnp.clip(jax.grad(U, argnums=1)(learnt_dist_params, q, j), a_min=-max_grad,
-                            a_max=max_grad)
-        self.U = U
-        self.grad_U = grad_U
 
     def get_init_state(self):
         no_grad_params = NoGradParams(jnp.ones((
@@ -93,19 +84,17 @@ class HamiltoneanMonteCarlo:
         else:
             raise NotImplemented
 
-
     @staticmethod
-    def _inner_most_loop_func(grad_U, L, learnt_dist_params, i, carry, xs):
+    def _inner_most_loop_func(grad_U, L, carry, xs):
         p, q = jax.lax.stop_gradient(carry)  # ensure only grad to epsilon for final iter
         l, epsilon = xs
         q = q + epsilon * p
-        p = jax.lax.cond(l != (L - 1), lambda p: p - epsilon * grad_U(learnt_dist_params, q, i),
+        p = jax.lax.cond(l != (L - 1), lambda p: p - epsilon * grad_U(q),
                          lambda p: p, p)
         return (p, q), None
 
-
     @staticmethod
-    def _outer_loop_func(U, grad_U, inner_most_loop_func, L, learnt_dist_params, i, carry, xs):
+    def _outer_loop_func(U, grad_U, inner_most_loop_func, L, carry, xs):
         current_q = jax.lax.stop_gradient(carry)
         rng_key = xs["rng_key"]
         epsilon = xs["step_size"]
@@ -113,14 +102,14 @@ class HamiltoneanMonteCarlo:
         rng_key, subkey = jax.random.split(rng_key)
         p = jax.random.normal(key=subkey, shape=(q.shape))
         current_p = p
-        p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
+        p = p - epsilon * grad_U(q) / 2
         xs_inner = (jnp.arange(L), jnp.repeat(epsilon[None, ...], L, axis=0))
         (p, q), _ = jax.lax.scan(inner_most_loop_func, init=(p, q), xs=xs_inner)
-        p = p - epsilon * grad_U(learnt_dist_params, q, i) / 2
+        p = p - epsilon * grad_U(q) / 2
         p = -p
 
-        U_current = U(learnt_dist_params, current_q, i)
-        U_proposed = U(learnt_dist_params, q, i)
+        U_current = U(current_q)
+        U_proposed = U(q)
         K_current = jnp.sum(current_p ** 2) / 2
         K_proposed = jnp.sum(p ** 2) / 2
 
@@ -134,17 +123,20 @@ class HamiltoneanMonteCarlo:
         current_q = jax.lax.select(accept, q, current_q)
         return current_q, (current_q, acceptance_probability_clip_low)
 
-    @partial(jax.vmap, in_axes=(None, 0, None, None, 0, None))
-    def _run(self, key, learnt_distribution_params, step_size, x, i):
+    @partial(jax.vmap, in_axes=(None, 0, None, 0, None))
+    def _run(self, key, step_size, x, U):
+        def grad_U(q):
+            return jnp.clip(jax.grad(U)(q), a_min=-self.max_grad, a_max=self.max_grad)
+
         current_q = x  # set current_q equal to input x from AIS
         chex.assert_shape(current_q, (self.dim,))
         xs = {"rng_key": jax.random.split(key, self.n_outer_steps),
               "step_size": step_size}
-        inner_most_loop_func = partial(self._inner_most_loop_func, self.grad_U,
-                                       self.n_inner_steps, learnt_distribution_params, i)
-        outer_loop_func = partial(self._outer_loop_func, self.U, self.grad_U,
+        inner_most_loop_func = partial(self._inner_most_loop_func, grad_U,
+                                       self.n_inner_steps)
+        outer_loop_func = partial(self._outer_loop_func, U, grad_U,
                                   inner_most_loop_func,
-                                  self.n_inner_steps, learnt_distribution_params, i)
+                                  self.n_inner_steps)
         current_q, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
             jax.lax.scan(outer_loop_func, init=(current_q), xs=xs)
         return current_q, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop)
@@ -185,14 +177,13 @@ class HamiltoneanMonteCarlo:
                     distribution_number=i)
 
 
-    def run_and_loss(self, key, learnt_distribution_params,
-                     transition_operator_step_size_params, transition_operator_additional_state_info,
-                     x_batch, i):
+    def run_and_loss(self, key, transition_operator_step_size_params,
+                     transition_operator_additional_state_info, x_batch, i, U):
         seeds = jax.random.split(key, x_batch.shape[0])
         step_size = self.get_step_size_param_for_dist(transition_operator_step_size_params, i)
         x_batch_final, (current_q_per_outer_loop, acceptance_probabilities_per_outer_loop) = \
-            self._run(seeds, learnt_distribution_params,
-                      step_size, x_batch, i)
+            self._run(seeds,
+                      step_size, x_batch, U)
         info = self.get_key_info(x_batch, current_q_per_outer_loop,
                                  acceptance_probabilities_per_outer_loop,
                                  transition_operator_additional_state_info, i)
@@ -226,6 +217,7 @@ class HamiltoneanMonteCarlo:
     def update_no_grad_params(self, i, no_grad_params, info) -> NoGradParams:
         return no_grad_params
 
+
     def update_step_size_p_accept(self, step_size_params,
                               average_acceptance_probabilities_per_outer_loop, i):
         multiplying_factor = jnp.where(average_acceptance_probabilities_per_outer_loop >
@@ -239,13 +231,15 @@ class HamiltoneanMonteCarlo:
 
 
 
-    def run(self, key, learnt_distribution_params,
-            transition_operator_state, x_batch, i):
+    def run(self, key, transition_operator_state, x_batch, i, target_log_prob: LogProbFunc):
         """Vectorised run with updates to transition operator state"""
+        def U(x):
+            return - target_log_prob(x)
+
         if self.step_tuning_method == "p_accept":
-            x_out, info = self.run_and_loss(key, learnt_distribution_params,
+            x_out, info = self.run_and_loss(key,
                                             transition_operator_state.step_size_params,
-            transition_operator_state.no_grad_params, x_batch, i)
+            transition_operator_state.no_grad_params, x_batch, i, U)
             # tune step size to reach target of p_accept = 0.65
             new_step_size_params = self.update_step_size_p_accept(
                 transition_operator_state.step_size_params,
@@ -257,9 +251,9 @@ class HamiltoneanMonteCarlo:
             new_transition_operator_state = HMCStatePAccept(no_grad_params, new_step_size_params)
         else:
             (loss, (x_out, info)), grads = jax.value_and_grad(self.run_and_loss,
-                                                            has_aux=True, argnums=2)(
-                key, learnt_distribution_params, transition_operator_state.step_size_params,
-                transition_operator_state.no_grad_params, x_batch, i)
+                                                            has_aux=True, argnums=1)(
+                key, transition_operator_state.step_size_params,
+                transition_operator_state.no_grad_params, x_batch, i, U)
             updates, new_opt_state = self.optimizer.update(grads,
                                                            transition_operator_state.optimizer_state)
             step_size_params_new = optax.apply_updates(transition_operator_state.step_size_params,

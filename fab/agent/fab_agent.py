@@ -14,7 +14,7 @@ import pathlib
 import matplotlib.pyplot as plt
 
 from fab.types import TargetLogProbFunc, HaikuDistribution
-from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
 
@@ -52,8 +52,8 @@ class AgentFAB:
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
-        assert loss_type in ["alpha_2_div", "forward_kl", "sample_prob", "new"]
-        assert style in ["vanilla", "re-param-style", "new"]
+        assert loss_type in ["alpha_2_div", "forward_kl", "sample_prob"]
+        assert style in ["vanilla", "proptoloss"]
         self.loss_type = loss_type
         self.style = style
         self.plotter = plotter
@@ -107,7 +107,7 @@ class AgentFAB:
                            )
             else:
                 raise NotImplementedError
-        elif self.loss_type == "new":
+        elif self.loss_type == "alpha_2_div":
             def target_log_prob(x):
                 return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
                     params, x)
@@ -122,18 +122,14 @@ class AgentFAB:
                 ais_loss, (log_w, log_q_x, log_p_x) = self.alpha_2_loss(x_samples, log_w_ais, learnt_distribution_params)
             else:
                 ais_loss, (log_w, log_q_x, log_p_x) = self.forward_kl_loss(x_samples, log_w_ais, learnt_distribution_params)
-        elif self.style == "re-param-style":
+        elif self.style == "proptoloss":
+            # sample in proportion to the loss
             if self.loss_type == "alpha_2_div":
-                ais_loss, (log_w, log_q_x, log_p_x) = self.alpha_2_loss_fancy(x_samples, log_w_ais, learnt_distribution_params)
-            elif self.loss_type == "sample_prob":
-                ais_loss, (log_w, log_q_x, log_p_x) = self.forward_kl_loss(x_samples, log_w_ais, learnt_distribution_params)
+                ais_loss, (log_w, log_q_x, log_p_x) = self.alpha_2_div_proptoloss_target(x_samples, log_w_ais, learnt_distribution_params)
             else:
                 raise NotImplementedError
         else:
-            if self.loss_type == "new":
-                ais_loss, (log_w, log_q_x, log_p_x) = self.new_loss(x_samples, log_w_ais, learnt_distribution_params)
-            else:
-                raise NotImplementedError
+            raise NotImplementedError
 
         loss = ais_loss
         if self.add_reverse_kl_loss:
@@ -152,7 +148,10 @@ class AgentFAB:
         kl_loss = jnp.mean(log_q_x - log_p_x)
         return kl_loss
 
-    def new_loss(self, x_samples, log_w_ais, learnt_distribution_params):
+    def alpha_2_div_proptoloss_target(self, x_samples, log_w_ais, learnt_distribution_params):
+        """
+        Loss when our ais chain targets p^2/q.
+        """
         # below two lines are just for aux info, not used, should be removed later
         log_q_x = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
         log_p_x = self.target_log_prob(x_samples)
@@ -190,35 +189,6 @@ class AgentFAB:
         log_p_x = self.target_log_prob(x_samples)
         log_w = log_p_x - log_q_x
         return - jnp.mean(log_q_x), (log_w, log_q_x, log_p_x)
-
-    def alpha_2_loss_fancy(self, x_samples, log_w_ais, learnt_distribution_params):
-        """Minimise upper bound of $\alpha$-divergence with $\alpha=2$ using ais dist with target of
-        p^2 / q. """
-        valid_samples = jnp.isfinite(log_w_ais) & jnp.all(jnp.isfinite(x_samples), axis=-1)
-        # remove invalid x_samples so we don't get NaN gradients.
-        x_samples = jnp.where(valid_samples[:, None].repeat(x_samples.shape[-1], axis=-1),
-                              x_samples, jnp.zeros_like(x_samples))
-        z_base, log_q_z_base, log_det_reverse = \
-            self.learnt_distribution.base_z_log_prob_and_log_det.apply(
-            jax.lax.stop_gradient(learnt_distribution_params), x_samples)
-        x_reparam, log_det_forward = self.learnt_distribution.x_and_log_det_forward.apply(
-            learnt_distribution_params, z_base)
-        # chex.assert_trees_all_close((log_det_reverse, x_samples), (-log_det_forward, x_reparam))
-        log_q_x = log_q_z_base - log_det_forward
-        # log_q_x_check = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x_samples)
-        # log_q_z_base_check  = log_q_x - log_det_reverse
-        log_p_x = self.target_log_prob(x_reparam)
-        log_q_e = jax.lax.stop_gradient(log_q_z_base)
-        log_p_e = jax.lax.stop_gradient(log_p_x - log_det_reverse)
-        log_w_x = log_p_x - log_q_x
-        log_w_e = log_q_e - log_p_e
-        differentiated_inner_term = 2 * log_w_x
-        blocked_epsion_log_w_term = 2 * log_w_e
-        inner_term = log_w_ais + blocked_epsion_log_w_term + differentiated_inner_term
-        # give invalid x_sample terms 0 importance weight.
-        inner_term = jnp.where(valid_samples, inner_term, -jnp.ones_like(inner_term) * float("inf"))
-        alpha_2_loss = jax.nn.logsumexp(inner_term, axis=0)
-        return alpha_2_loss, (log_w_x, log_q_x, log_p_x)
 
 
     def update(self, x_ais, log_w_ais, learnt_distribution_params, opt_state, rng_key):
@@ -262,12 +232,6 @@ class AgentFAB:
 
     @partial(jax.jit, static_argnums=0)
     def clip_log_w_ais(self, log_w_ais):
-        # splits = jnp.linspace(0, self.batch_size, n_splits, dtype=jnp.int32)[1:-1]
-        # a = jnp.split(a, splits)
-        # top_log_w = jnp.stack(
-        #     jax.tree_map(
-        #         jnp.max, a))
-        # max_clip_low_w = jnp.min(top_log_w)
         top_log_w = jnp.stack(self.top_k_func(log_w_ais))
         max_clip_low_w = jnp.min(top_log_w)  # get medium sized log_w
         log_w_ais = jnp.clip(log_w_ais, a_max=max_clip_low_w)
@@ -338,6 +302,7 @@ class AgentFAB:
         def top_k_func(a):
             return jax.lax.approx_max_k(a, k)
         self.top_k_func = top_k_func
+
         if save:
             pathlib.Path(plots_dir).mkdir(exist_ok=True, parents=True)
             pathlib.Path(checkpoints_dir).mkdir(exist_ok=True, parents=True)

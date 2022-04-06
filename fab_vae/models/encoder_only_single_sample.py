@@ -1,24 +1,14 @@
-from typing import Tuple
-
-from functools import partial
-import optax
 import chex
-import jax.numpy as jnp
 import jax
 import tensorflow_datasets as tfds
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-import os
-import pickle
 
-from fab.utils.logging import ListLogger, to_numpy, Logger
+from fab.utils.logging import to_numpy
 from fab.utils.plotting import plot_history
 
-from fab_vae.models.fab_types import VAENetworks, Params, Info, State, AISOutput
-from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
-from fab_vae.models.networks import make_vae_networks
-from fab_vae.utils.numerical import remove_inf_and_nan
-from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fab_vae.utils.data import load_dataset
+from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab_vae.models.encoder_only import VAE_encoder
 
 

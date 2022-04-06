@@ -1,6 +1,7 @@
-from typing import Tuple
+from typing import Tuple, Optional, Callable, Sequence
 
 from functools import partial
+
 import optax
 import chex
 import jax.numpy as jnp
@@ -14,13 +15,14 @@ import pickle
 from fab.utils.logging import ListLogger, to_numpy, Logger
 from fab.utils.plotting import plot_history
 
-from fab_vae.models.fab_types import VAENetworks, Params, Info, State, AISOutput
+from fab_vae.models.fab_types import Params, Info, State, AISOutput
 from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
 from fab_vae.models.networks import make_vae_networks
 from fab_vae.utils.numerical import remove_inf_and_nan
-from fab_vae.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.plotting import plot_contours_2D
 
+Plotter = Callable[[State], Sequence[plt.Figure]]
 
 class VAE:
     def __init__(
@@ -30,7 +32,7 @@ class VAE:
             use_flow: bool = True,
             use_conv: bool = False,
             lr: float = 1e-3,
-            max_grad_norm: float = 1.0,
+            max_grad_norm: Optional[float] = None,
             batch_size: int = 64,
             seed: int = 0,
             n_samples_z_train: int = 10,
@@ -39,7 +41,10 @@ class VAE:
             n_updates_per_ais: int = 1,
             n_ais_dist: int = 4,
             logger: Logger = ListLogger(),
-            fab_loss_type: str = "forward_kl"
+            plotter: Optional[Plotter] = None,
+            fab_loss_type: str = "forward_kl" ,  # "forward_kl"  "alpha_2_div"
+            n_flow_layers: int = 5,
+            clip_log_w_frac: Optional[float] = None
     ):
         self.loss_type = loss_type
         self.n_updates_per_ais = n_updates_per_ais
@@ -47,17 +52,22 @@ class VAE:
             latent_size=latent_size,
             output_shape=MNIST_IMAGE_SHAPE,
             use_flow=use_flow,
-            use_conv=use_conv
+            use_conv=use_conv,
+            n_flow_layers=n_flow_layers
         )
         self.lr = lr
         self.latent_size = latent_size
         self.use_flow = use_flow
-        self.optimizer = optax.chain(optax.zero_nans(),
-                            optax.clip_by_global_norm(max_grad_norm),
-                            optax.adam(lr))
+        if max_grad_norm is None:
+            self.optimizer = optax.chain(optax.zero_nans(), optax.adamw(lr))
+        else:
+            self.optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip_by_global_norm(max_grad_norm),
+                                optax.adamw(lr))
         self.batch_size = batch_size
         self.seed = seed
         self.logger = logger
+        self.plotter = plotter
         assert loss_type in ["fab", "fab_combo", "fab_decoder", "vanilla"]
         self.use_vanilla = False if loss_type == "fab" else True
         self.ais = AnnealedImportanceSampler(dim=latent_size,
@@ -72,6 +82,15 @@ class VAE:
         self.state = self.init_state(seed)
         self.fab_loss_type = fab_loss_type
 
+        self.clip_frac = clip_log_w_frac
+        if self.clip_frac is not None:
+            k = int(self.clip_frac * self.batch_size)
+
+            @jax.jit
+            def top_k_func(a):
+                return jax.lax.approx_max_k(a, k)
+            self.top_k_func = top_k_func
+
 
     def init_state(self, seed) -> State:
         rng_key = jax.random.PRNGKey(seed)
@@ -84,6 +103,13 @@ class VAE:
                       opt_state=opt_state,
                       transition_operator_state=transition_operator_state)
         return state
+
+    @partial(jax.jit, static_argnums=0)
+    def clip_log_w_ais(self, log_w_ais):
+        top_log_w = jnp.stack(self.top_k_func(log_w_ais))
+        max_clip_low_w = jnp.min(top_log_w)  # get medium sized log_w
+        log_w_ais = jnp.clip(log_w_ais, a_max=max_clip_low_w)
+        return log_w_ais
 
 
     def ais_forward(
@@ -122,6 +148,8 @@ class VAE:
         info, transition_operator_state = jax.tree_map(lambda x: jnp.mean(x, axis=0),
                                                        (info, transition_operator_state))
         z_ais, log_w_ais, invalid_sample_frac = remove_inf_and_nan(z_ais, log_w_ais)
+        if self.clip_frac is not None:
+            log_w_ais = self.clip_log_w_ais(log_w_ais)
         info.update(invalid_sample_frac=invalid_sample_frac)
         ais_output = AISOutput(z_ais=z_ais, log_w_ais=log_w_ais,
                                transition_operator_state=transition_operator_state, info=info)
@@ -236,7 +264,7 @@ class VAE:
 
             if not "transition_operator_state" in locals():
                 transition_operator_state = state.transition_operator_state
-            updates, new_opt_state = self.optimizer.update(grads, state.opt_state)
+            updates, new_opt_state = self.optimizer.update(grads, state.opt_state, state.params)
             new_params = optax.apply_updates(state.params, updates)
             chex.assert_trees_all_equal_shapes(state.params, new_params)
             state = State(params=new_params, opt_state=new_opt_state,
@@ -267,12 +295,17 @@ class VAE:
 
     def train(self,
               n_step: int = int(1e3),
-              eval_freq: int = 50):
+              eval_freq: int = 50,
+              plot_freq: int = 50,
+              ):
         train_ds = load_dataset(tfds.Split.TRAIN, self.batch_size)
         valid_ds = load_dataset(tfds.Split.TEST, self.batch_size)
 
         pbar = tqdm(range(n_step))
         for step in pbar:
+            if step % plot_freq == 0 and self.plotter is not None:
+                figs = self.plotter(self.state)
+
             if step % eval_freq == 0:  # evaluate
                 valid_batch = next(valid_ds)
                 val_info = self.eval(self.state, valid_batch)
@@ -299,35 +332,56 @@ class VAE:
                         ax1 = None,
                         ax2=None):
         key = jax.random.PRNGKey(0)
-        def target_log_prob(z):
+
+        @jax.jit
+        def _target_log_prob(z, x):
             log_p_z = self.vae_networks.prior_log_prob(z)
             log_p_x_given_z = self.vae_networks.decoder_log_prob.apply(
                 state.params.decoder, x, z)
             chex.assert_equal_shape((log_p_z, log_p_x_given_z))
             return log_p_z + log_p_x_given_z
 
-        def base_log_prob(z):
-            return self.vae_networks.encoder_network.log_prob.apply(state.params.encoder, x, z)
+        target_log_prob = partial(_target_log_prob, x=x)
 
-        z_base, log_q_z_base = self.vae_networks.encoder_network.sample_and_log_prob.apply(
-            state.params.encoder, key, x, sample_shape=(n_samples_z,))
+        @jax.jit
+        def get_plotting_info(state, x):
+            def target_log_prob(z):
+                log_p_z = self.vae_networks.prior_log_prob(z)
+                log_p_x_given_z = self.vae_networks.decoder_log_prob.apply(
+                    state.params.decoder, x, z)
+                chex.assert_equal_shape((log_p_z, log_p_x_given_z))
+                return log_p_z + log_p_x_given_z
+
+            def base_log_prob(z):
+                return self.vae_networks.encoder_network.log_prob.apply(state.params.encoder, x, z)
+
+            z_base, log_q_z_base = self.vae_networks.encoder_network.sample_and_log_prob.apply(
+                state.params.encoder, key, x, sample_shape=(n_samples_z,))
 
 
-        z_ais, log_w_ais, new_transition_operator_state, info = \
-            self.ais.run(z_base, log_q_z_base,
-                    key,
-                    state.transition_operator_state,
-                    base_log_prob=base_log_prob,
-                    target_log_prob=target_log_prob)
+            z_ais, log_w_ais, new_transition_operator_state, info = \
+                self.ais.run(z_base, log_q_z_base,
+                        key,
+                        state.transition_operator_state,
+                        base_log_prob=base_log_prob,
+                        target_log_prob=target_log_prob)
 
+            indices = jax.random.choice(jax.random.PRNGKey(0), log_w_ais.shape[0],
+                                        p=jax.nn.softmax(log_w_ais), shape=(1000,),
+                                        replace=True)
+            return z_base, z_ais, log_q_z_base, log_w_ais, indices
+
+        z_base, z_ais, log_q_z_base, log_w_ais, indices = get_plotting_info(state, x)
         if ax1 is None:
-            fig, ax1 = plt.subplots(1, 2)
+            fig, ax1 = plt.subplots(1, 3)
         bound = float(jnp.max(jnp.abs(z_ais)) + 1)
         plot_contours_2D(target_log_prob, ax=ax1[0], bound=bound, levels=50)
         ax1[0].plot(z_base[:, 0], z_base[:, 1], "o", alpha=0.5)
 
         plot_contours_2D(target_log_prob, ax=ax1[1], bound=bound, levels=50)
         ax1[1].plot(z_ais[:, 0], z_ais[:, 1], "o", alpha=0.5)
+        plot_contours_2D(target_log_prob, ax=ax1[2], bound=bound, levels=50)
+        ax1[2].plot(z_ais[indices, 0], z_ais[indices, 1], "o", alpha=0.3)
 
         z_sample_indx = 1
         if ax2 is None:

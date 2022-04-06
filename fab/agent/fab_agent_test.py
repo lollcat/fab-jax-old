@@ -63,8 +63,8 @@ class Test_AgentFAB(absltest.TestCase):
     log_prob_2D = target.log_prob_2D
     batch_size = 128
     n_iter = int(5e3)
-    loss_type = "new"  # "forward_kl"  "alpha_2_div" "new"
-    style = "new"  # "vanilla"  "new"
+    loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
+    style = "proptoloss"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 4
     soften_ais_weights = True
     use_reparam_loss = False
