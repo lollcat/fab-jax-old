@@ -1,10 +1,19 @@
-distrax
+dm-acme
+neural_testbed @ git+https://github.com/deepmind/neural_testbed.git
+blackjax
+chex
 dm-haiku
 optax
+tensorflow
+tensorflow-probability
+distrax
+tensorflow-datasets
 wandb
 tqdm
 pandas
 matplotlib
+jupyterlab
 hydra-core
 hydra-joblib-launcher
 joblib
+

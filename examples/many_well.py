@@ -10,7 +10,7 @@ import optax
 import matplotlib.pyplot as plt
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
-from fab.types_ import HaikuDistribution
+from fab.types import HaikuDistribution
 from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
 from fab.agent.fab_agent import AgentFAB
 from fab.target_distributions.many_well import ManyWellEnergy

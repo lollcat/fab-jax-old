@@ -60,7 +60,7 @@ def plot_contours_2D(log_prob_func,
                      ax: Optional[plt.Axes] = None,
                      bound=3, levels=20):
     """Plot the contours of a 2D log prob function."""
-    if not ax:
+    if ax is None:
         fig, ax = plt.subplots(1)
     n_points = 200
     x_points_dim1 = np.linspace(-bound, bound, n_points)

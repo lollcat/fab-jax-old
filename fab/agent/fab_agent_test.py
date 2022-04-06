@@ -11,12 +11,42 @@ from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2
 
 
 def plotter(fab_agent, log_prob_2D):
-    fig, ax = plt.subplots()
-    plot_contours_2D(log_prob_2D, ax=ax, bound=3, levels=20)
-    samples = fab_agent.learnt_distribution.sample.apply(
-        fab_agent.state.learnt_distribution_params,
-        jax.random.PRNGKey(0), (500,))
-    plot_marginal_pair(samples, ax=ax)
+    batch_size = 100
+
+    @jax.jit
+    def get_info(state):
+        base_log_prob = fab_agent.get_base_log_prob(state.learnt_distribution_params)
+        target_log_prob = fab_agent.get_target_log_prob(state.learnt_distribution_params)
+        x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
+            state.learnt_distribution_params, rng=state.key,
+            sample_shape=(batch_size,))
+        x_ais_loss, _, _, _ = \
+            fab_agent.annealed_importance_sampler.run(
+                x_base, log_q_x_base, state.key,
+                state.transition_operator_state,
+                base_log_prob=base_log_prob,
+                target_log_prob=target_log_prob
+            )
+        x_ais_target, _, _, _ = \
+            fab_agent.annealed_importance_sampler.run(
+                x_base, log_q_x_base, state.key,
+                state.transition_operator_state,
+                base_log_prob=base_log_prob,
+                target_log_prob=fab_agent.target_log_prob
+            )
+        return x_base, x_ais_loss, x_ais_target
+
+    x_base, x_ais_loss, x_ais_target = get_info(fab_agent.state)
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+    plot_contours_2D(log_prob_2D, ax=axs[0], bound=3, levels=20)
+    plot_marginal_pair(x_base, ax=axs[0])
+    axs[0].set_title("base samples")
+    plot_contours_2D(log_prob_2D, ax=axs[1], bound=3, levels=20)
+    plot_marginal_pair(x_ais_loss, ax=axs[1])
+    axs[1].set_title("p^2 / q samples")
+    plot_contours_2D(log_prob_2D, ax=axs[2], bound=3, levels=20)
+    plot_marginal_pair(x_ais_target, ax=axs[2])
+    axs[2].set_title("ais target samples")
     plt.show()
     return [fig]
 
@@ -32,13 +62,16 @@ class Test_AgentFAB(absltest.TestCase):
     target_log_prob = target.log_prob
     log_prob_2D = target.log_prob_2D
     batch_size = 128
-    n_iter = int(1e4)
+    n_iter = int(5e3)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
-    n_intermediate_distributions: int = 2
+    style = "proptoloss"  # "vanilla"  "proptoloss"
+    n_intermediate_distributions: int = 4
+    soften_ais_weights = True
+    use_reparam_loss = False
     max_grad_norm = 1.0
-    lr = 5e-4
-    n_plots = 10
-    n_evals = 10
+    lr = 1e-3
+    n_plots = 5
+    n_evals = 5
     eval_batch_size = batch_size*2
 
     AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
@@ -52,9 +85,14 @@ class Test_AgentFAB(absltest.TestCase):
                          AIS_kwargs=AIS_kwargs,
                          optimizer=optimizer,
                          loss_type=loss_type,
-                         plotter=plotter)
+                         plotter=plotter,
+                         style=style,
+                         add_reverse_kl_loss=use_reparam_loss,
+                         soften_ais_weights=soften_ais_weights
+                         )
 
     def test_fab_agent(self):
+        # self.plotter(self.fab_agent)
         self.fab_agent.run(n_iter=self.n_iter, batch_size=self.batch_size, n_plots=self.n_plots,
                            save=False, n_checkpoints=None, n_evals=self.n_evals,
                            eval_batch_size=self.eval_batch_size)
