@@ -42,7 +42,8 @@ class AgentFAB:
                  loss_type: str = "alpha_2_div",
                  soften_ais_weights: bool = True,
                  style: str = "vanilla",
-                 add_reverse_kl_loss: bool = True,
+                 add_reverse_kl_loss: bool = False,
+                 reverse_kl_loss_coeff: float = 0.001,
                  AIS_kwargs: Dict = {},
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
@@ -63,6 +64,7 @@ class AgentFAB:
             n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
         self.optimizer = optimizer
         self.state = self.init_state(seed)
+        self.reverse_kl_loss_coeff = reverse_kl_loss_coeff
         self.add_reverse_kl_loss = add_reverse_kl_loss
         self.soften_ais_weights = soften_ais_weights
         self.batch_size: int
@@ -93,7 +95,7 @@ class AgentFAB:
     def get_target_log_prob(self, params):
         if self.style == "vanilla":
             return self.target_log_prob
-        elif self.loss_type == "re-param-style":
+        elif self.style == "proptoloss":
             if self.loss_type == "alpha_2_div" or "sample_prob":
                 def target_log_prob(x):
                     return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
@@ -107,10 +109,6 @@ class AgentFAB:
                            )
             else:
                 raise NotImplementedError
-        elif self.loss_type == "alpha_2_div":
-            def target_log_prob(x):
-                return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
-                    params, x)
         else:
             raise NotImplementedError
         return target_log_prob
@@ -135,7 +133,7 @@ class AgentFAB:
         if self.add_reverse_kl_loss:
             batch_size = x_samples.shape[0]
             kl_loss = self.reverse_kl_loss(batch_size, learnt_distribution_params, rng_key)
-            loss = loss + kl_loss * 0.001
+            loss = loss + kl_loss * self.reverse_kl_loss_coeff
         return loss, (log_w, log_q_x, log_p_x)
 
 

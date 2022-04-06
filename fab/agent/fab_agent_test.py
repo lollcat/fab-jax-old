@@ -70,8 +70,8 @@ class Test_AgentFAB(absltest.TestCase):
     use_reparam_loss = False
     max_grad_norm = 1.0
     lr = 1e-3
-    n_plots = 10
-    n_evals = 10
+    n_plots = 5
+    n_evals = 5
     eval_batch_size = batch_size*2
 
     AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
