@@ -13,7 +13,7 @@ from tqdm import tqdm
 import pathlib
 import matplotlib.pyplot as plt
 
-from fab.types import TargetLogProbFunc, HaikuDistribution
+from fab.types import LogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
@@ -37,14 +37,14 @@ class AgentFAB:
     """Flow Annealed Importance Sampling Bootstrap Agent"""
     def __init__(self,
                  learnt_distribution: HaikuDistribution,
-                 target_log_prob: TargetLogProbFunc,
+                 target_log_prob: LogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
                  soften_ais_weights: bool = True,
                  style: str = "vanilla",
                  add_reverse_kl_loss: bool = False,
                  reverse_kl_loss_coeff: float = 0.001,
-                 AIS_kwargs: Dict = {},
+                 AIS_kwargs: Dict = {"transition_operator_type": "hmc_tfp"},
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
                  plotter: Optional[Plotter] = None,

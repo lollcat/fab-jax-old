@@ -61,22 +61,27 @@ class Test_AgentFAB(absltest.TestCase):
     target = ManyWellEnergy(dim=dim)
     target_log_prob = target.log_prob
     log_prob_2D = target.log_prob_2D
-    batch_size = 128
+    batch_size = 64
     n_iter = int(5e3)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "proptoloss"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 4
     soften_ais_weights = True
     use_reparam_loss = False
-    max_grad_norm = 1.0
+    max_grad_norm = None
     lr = 1e-3
     n_plots = 5
-    n_evals = 5
-    eval_batch_size = batch_size*2
+    n_evals = 10
+    eval_batch_size = batch_size
 
-    AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
+    # AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
+    AIS_kwargs = {"transition_operator_type": "hmc_tfp"}
 
-    optimizer = optax.chain(optax.clip_by_global_norm(max_grad_norm), optax.adam(lr))
+    if max_grad_norm is None:
+        optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
+    else:
+        optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip_by_global_norm(max_grad_norm), optax.adam(lr))
     plotter = partial(plotter, log_prob_2D=log_prob_2D)
 
     fab_agent = AgentFAB(learnt_distribution=real_nvp_flo,
