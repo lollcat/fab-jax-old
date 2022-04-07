@@ -4,24 +4,38 @@ import jax
 from functools import partial
 from typing import Dict, Callable
 
-from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
+from fab.sampling_methods.mcmc.base import TransitionOperator
+from fab.sampling_methods.base import AnnealedImportanceSamplerBase
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
-from fab_vae.types import LogProbFunc
+from fab.types import LogProbFunc
 
 
 IntermediateLogProb = Callable[[chex.Array, int], chex.Array]
 
-class AnnealedImportanceSampler:
+class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
     """Annealed importance sampling, designed for use in the fab agent."""
     def __init__(self,
                  dim: int,
                  n_intermediate_distributions: int = 1,
-                 transition_operator_type: str = "HMC",
+                 transition_operator_type: str = "nuts_tfp",
                  additional_transition_operator_kwargs: Dict = {},
-                 distribution_spacing_type: str = "linear"):
-        if transition_operator_type == "HMC":
+                 distribution_spacing_type: str = "linear"
+                 ):
+        self.transition_operator_manager: TransitionOperator
+        if transition_operator_type == "hmc":
+            from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo
             self.transition_operator_manager = HamiltoneanMonteCarlo(
                 dim, n_intermediate_distributions,
+                **additional_transition_operator_kwargs)
+        elif transition_operator_type == "hmc_tfp":
+            from fab.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP
+            self.transition_operator_manager = HamiltoneanMonteCarloTFP(
+                n_intermediate_distributions,
+                **additional_transition_operator_kwargs)
+        elif transition_operator_type == "nuts_tfp":
+            from fab.sampling_methods.mcmc.tfp_nuts import NoUTurnSamplerTFP
+            self.transition_operator_manager = NoUTurnSamplerTFP(
+                n_intermediate_distributions,
                 **additional_transition_operator_kwargs)
         else:
             raise NotImplementedError
@@ -29,6 +43,9 @@ class AnnealedImportanceSampler:
         self.distribution_spacing_type = distribution_spacing_type
         self.beta_space = self.setup_n_distributions()
 
+
+    def get_init_state(self):
+        return self.transition_operator_manager.get_init_state()
 
     def run(self, x_base, log_prob_p0, key, transition_operator_state,
             base_log_prob, target_log_prob):

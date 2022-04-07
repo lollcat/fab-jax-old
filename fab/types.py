@@ -5,7 +5,7 @@ import haiku as hk
 
 XPoints = jnp.ndarray
 LogProbs = jnp.ndarray
-TargetLogProbFunc = Callable[[XPoints], LogProbs]
+LogProbFunc = Callable[[XPoints], LogProbs]
 MCMCTransitionManager = Any
 Params = Any
 # TODO: rather define init, and then log prob like this

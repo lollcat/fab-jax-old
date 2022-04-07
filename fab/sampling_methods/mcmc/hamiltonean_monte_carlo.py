@@ -6,8 +6,8 @@ from functools import partial
 import chex
 from fab.types import Params
 
-from fab_vae.types import LogProbFunc
-
+from fab.types import LogProbFunc
+from fab.sampling_methods.mcmc.base import TransitionOperator
 
 
 
@@ -36,7 +36,7 @@ class Info(NamedTuple):
 
 
 
-class HamiltoneanMonteCarlo:
+class HamiltoneanMonteCarlo(TransitionOperator):
     def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
                  initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3):

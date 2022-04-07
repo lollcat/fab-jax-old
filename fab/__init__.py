@@ -1,1 +1,1 @@
-from fab.types import TargetLogProbFunc, XPoints, MCMCTransitionManager, HaikuDistribution
+from fab.types import LogProbFunc, XPoints, MCMCTransitionManager, HaikuDistribution
