@@ -7,7 +7,7 @@ import numpy as np
 from functools import partial
 import distrax
 
-from fab.sampling_methods import HamiltoneanMonteCarlo, \
+from fab.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo, \
     HMCStateGradientBased, HMCStatePAccept
 from fab.utils.plotting import plot_history
 from fab.utils.logging import ListLogger

@@ -66,7 +66,7 @@ class Test_AgentFAB(absltest.TestCase):
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "proptoloss"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 4
-    soften_ais_weights = True
+    soften_ais_weights = False
     use_reparam_loss = False
     max_grad_norm = None
     lr = 1e-3
@@ -90,8 +90,8 @@ class Test_AgentFAB(absltest.TestCase):
                          AIS_kwargs=AIS_kwargs,
                          optimizer=optimizer,
                          loss_type=loss_type,
-                         plotter=plotter,
                          style=style,
+                         plotter=plotter,
                          add_reverse_kl_loss=use_reparam_loss,
                          soften_ais_weights=soften_ais_weights,
                          )

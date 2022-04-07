@@ -40,7 +40,7 @@ class AgentFAB:
                  target_log_prob: LogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
-                 soften_ais_weights: bool = True,
+                 soften_ais_weights: bool = False,
                  style: str = "vanilla",
                  add_reverse_kl_loss: bool = False,
                  reverse_kl_loss_coeff: float = 0.001,
@@ -48,7 +48,7 @@ class AgentFAB:
                  seed: int = 0,
                  optimizer: optax.GradientTransformation = optax.adam(1e-4),
                  plotter: Optional[Plotter] = None,
-                 logger: Logger = ListLogger(save=False),
+                 logger: Optional[Logger] = None,
                  evaluator: Optional[Evaluator] = None,
                  ):
         self.learnt_distribution = learnt_distribution
@@ -59,7 +59,10 @@ class AgentFAB:
         self.style = style
         self.plotter = plotter
         self.evaluator = evaluator
-        self.logger = logger
+        if logger is None:
+            self.logger = ListLogger(save=False)
+        else:
+            self.logger = logger
         self.annealed_importance_sampler = AnnealedImportanceSampler(dim=self.learnt_distribution.dim,
                 n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
         self.optimizer = optimizer
