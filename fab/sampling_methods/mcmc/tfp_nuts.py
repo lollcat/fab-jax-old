@@ -50,6 +50,8 @@ class NoUTurnSamplerTFP(TransitionOperator):
             max_tree_depth=self.max_tree_depth,
         )
         if self.tune:
+            # tfp.mcmc.DualAveragingStepSizeAdaptation gives bad results,
+            # may be due to num_adaption_steps? For now just use SimpleStepSizeAdaption
             transition_kernel = tfp.mcmc.SimpleStepSizeAdaptation(
                 inner_kernel=transition_kernel,
                 num_adaptation_steps=1,
