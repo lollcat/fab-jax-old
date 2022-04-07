@@ -75,7 +75,7 @@ class Test_AgentFAB(absltest.TestCase):
     eval_batch_size = batch_size
 
     # AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
-    AIS_kwargs = {"transition_operator_type": "hmc_tfp"}
+    AIS_kwargs = {"transition_operator_type": "hmc_tfp"}  #  "hmc_tfp", "nuts_tfp"
 
     if max_grad_norm is None:
         optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
@@ -93,7 +93,7 @@ class Test_AgentFAB(absltest.TestCase):
                          plotter=plotter,
                          style=style,
                          add_reverse_kl_loss=use_reparam_loss,
-                         soften_ais_weights=soften_ais_weights
+                         soften_ais_weights=soften_ais_weights,
                          )
 
     def test_fab_agent(self):

@@ -61,7 +61,7 @@ class AgentFAB:
         self.evaluator = evaluator
         self.logger = logger
         self.annealed_importance_sampler = AnnealedImportanceSampler(dim=self.learnt_distribution.dim,
-            n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
+                n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
         self.optimizer = optimizer
         self.state = self.init_state(seed)
         self.reverse_kl_loss_coeff = reverse_kl_loss_coeff
@@ -78,8 +78,7 @@ class AgentFAB:
                                                                             dummy_x)
 
         optimizer_state = self.optimizer.init(learnt_distribution_params)
-        transition_operator_state = self.annealed_importance_sampler.\
-            transition_operator_manager.get_init_state()
+        transition_operator_state = self.annealed_importance_sampler.get_init_state()
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       transition_operator_state=transition_operator_state,
                       optimizer_state=optimizer_state)
