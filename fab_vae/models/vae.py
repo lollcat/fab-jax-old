@@ -184,13 +184,13 @@ class VAE:
                         self.vae_networks.prior_log_prob(z_ais)
             chex.assert_equal_shape((log_p_x_z, log_q_z_given_x, log_w_ais))
             if self.fab_loss_type == "forward_kl":
-                decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
+                encoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_z_given_x)
             elif self.fab_loss_type == "alpha_2_div":
-                decoder_loss = jax.nn.logsumexp(log_w_ais +
+                encoder_loss = jax.nn.logsumexp(log_w_ais +
                                 jax.lax.stop_gradient(log_p_x_z) - log_q_z_given_x)
             else:
                 raise NotImplementedError
-            encoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_z_given_x)
+            decoder_loss = - jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_p_x_z)
             info = {}
             info.update(decoder_loss=decoder_loss, encoder_loss=encoder_loss)
             return encoder_loss + decoder_loss, info
@@ -400,19 +400,26 @@ class VAE:
 
 if __name__ == '__main__':
     import numpy as np
-    loss_type = "vanilla"  # "fab_decoder", "fab_combo", "vanilla", "fab"
+    loss_type = "fab"  # "fab_decoder", "fab_combo", "vanilla", "fab"
+    fab_loss_type = "forward_kl"
+    n_ais_dist = 4
+    n_flow_layers = 4
     print(loss_type)
-    vae = VAE(use_flow=False,
-              batch_size=128,
-              latent_size=2,
+    use_flow = True
+    vae = VAE(use_flow=use_flow,
+              batch_size=32,
+              latent_size=10,
+              n_ais_dist=n_ais_dist,
+              n_flow_layers=n_flow_layers,
               loss_type=loss_type,
               n_samples_z_train=20,
               n_samples_test=20,
               seed=0,
-              ais_eval=False,
-              lr=1e-4)
+              ais_eval=True,
+              lr=5e-4,
+              )
 
-    vae.train(n_step=5000, eval_freq=1000)
+    vae.train(n_step=int(1.5e4), eval_freq=200)
 
     plot_history(vae.logger.history)
     plt.show()

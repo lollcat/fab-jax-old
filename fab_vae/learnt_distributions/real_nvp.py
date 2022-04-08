@@ -27,10 +27,10 @@ class RealNVP(hk.Module):
     def __init__(self,
                 x_ndim: int,
                 flow_num_layers: int = 8,
-                mlp_hidden_size_per_x_dim: int = 2,
+                mlp_hidden_size_per_x_dim: int = 5,
                 mlp_num_layers: int = 2,
                 use_exp: bool = True,
-                layer_norm: bool = False):
+                layer_norm: bool = True):
         """Here we create a flow defined over q(z | x). We create a representation $h$ which is a
         function of x, which gets passed to each layer of the flow"""
         super(RealNVP, self).__init__()

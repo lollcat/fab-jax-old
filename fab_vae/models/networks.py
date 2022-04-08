@@ -17,15 +17,19 @@ class Encoder(hk.Module):
     super().__init__()
     self._encoder_torso = EncoderTorsoConv() if use_conv else EncoderTorsoMLP()
     self._latent_size = latent_size
+    self._conditioning_size = max(32, self._latent_size*2)
     self.use_flow = use_flow
     if self.use_flow:
-        self._flow_transform = RealNVP(x_ndim=latent_size, flow_num_layers=n_flow_layers)
+        self._flow_transform = RealNVP(x_ndim=latent_size,
+                                       flow_num_layers=n_flow_layers,
+                                       use_exp=True,
+                                       layer_norm=True)
 
   def __call__(self, x: jnp.ndarray) -> distrax.Distribution:
     x = self._encoder_torso(x)
     mean = hk.Linear(self._latent_size)(x)
     log_stddev = hk.Linear(self._latent_size)(x)
-    h = hk.Linear(self._latent_size)(x)
+    h = hk.Linear(self._conditioning_size)(x)
     stddev = jnp.exp(log_stddev)
     base_dist = distrax.MultivariateNormalDiag(
         loc=mean, scale_diag=stddev)
