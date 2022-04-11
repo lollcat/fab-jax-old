@@ -25,7 +25,6 @@ class BNN(hk.Module):
 
 
 
-
 class BNNEnergyFunction:
     def __init__(self,
                  seed = 0,
