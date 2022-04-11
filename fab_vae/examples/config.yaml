@@ -2,15 +2,16 @@
 vae:
   loss_type: vanilla
   latent_size: 10
-  use_flow: false
+  use_flow: true
   use_conv: false
-  lr: 1e-3
-  batch_size: 28
+  lr: 2e-4
+  batch_size: 36
   seed: 0
-  n_samples_z_train: 10
+  n_samples_z_train: 20
   n_samples_z_test: 20
   ais_eval: true
   n_ais_dist: 4
+  n_flow_layers: 6
 
 
 train:
