@@ -1,0 +1,42 @@
+
+bnn:
+  mlp_units: [5,5]
+
+flow:
+  type: rnvp
+  layer_nodes_per_dim: 10
+  n_layers: 10
+  layer_norm: false
+  act_norm: true
+
+fab:
+  loss_type: alpha_2_div
+  transition_operator:
+    type: hmc_tfp
+    n_inner_steps: 5
+    step_tuning_method: p_accept
+  n_intermediate_distributions: 4
+
+training:
+  seed: 0
+  lr: 2e-4
+  max_grad_norm: null
+  batch_size: 32
+  n_iterations: 1_000
+  use_64_bit: false
+
+
+evaluation:
+  n_plots: 10 # number of times we visualise the model throughout training.
+  n_evals: 20 # for calculating metrics of flow w.r.t target.
+  batch_size: 64 # must be a multiple of inner batch size
+  n_checkpoints: 10 # number of model checkpoints saved
+  save_path:  results/bnn/
+
+
+logger:
+  pandas_logger:
+    save_period: 100 # how often to save the pandas dataframe as a csv
+#  wandb:
+#    name: ManyWell32
+#    tags: [alpha_2_loss,ManyWell32]

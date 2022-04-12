@@ -1,10 +1,11 @@
 
 vae:
   loss_type: vanilla
+  fab_loss_type: alpha_2_div
   latent_size: 10
   use_flow: false
   use_conv: false
-  lr: 1e-3
+  lr: 1e-4
   batch_size: 28
   seed: 0
   n_samples_z_train: 10

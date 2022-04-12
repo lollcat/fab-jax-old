@@ -42,7 +42,7 @@ class VAE:
             n_ais_dist: int = 4,
             logger: Logger = ListLogger(),
             plotter: Optional[Plotter] = None,
-            fab_loss_type: str = "forward_kl" ,  # "forward_kl"  "alpha_2_div"
+            fab_loss_type: str = "alpha_2_div",  # "forward_kl"  "alpha_2_div"
             n_flow_layers: int = 5,
             clip_log_w_frac: Optional[float] = None
     ):
@@ -59,11 +59,11 @@ class VAE:
         self.latent_size = latent_size
         self.use_flow = use_flow
         if max_grad_norm is None:
-            self.optimizer = optax.chain(optax.zero_nans(), optax.adamw(lr))
+            self.optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
         else:
             self.optimizer = optax.chain(optax.zero_nans(),
                                 optax.clip_by_global_norm(max_grad_norm),
-                                optax.adamw(lr))
+                                optax.adam(lr))
         self.batch_size = batch_size
         self.seed = seed
         self.logger = logger

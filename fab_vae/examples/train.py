@@ -8,7 +8,6 @@ import os
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab_vae.models.vae import VAE
 
-
 def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
     if hasattr(cfg.logger, "pandas_logger"):
         logger = PandasLogger(save=True,
@@ -37,6 +36,7 @@ def train(cfg: DictConfig):
 
 
     vae = VAE(loss_type=cfg.vae.loss_type,
+              fab_loss_type=cfg.vae.fab_loss_type,
               latent_size=cfg.vae.latent_size,
               use_flow=cfg.vae.use_flow,
               use_conv=cfg.vae.use_conv,

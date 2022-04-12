@@ -8,42 +8,61 @@ import jax
 import jax.numpy as jnp
 
 from neural_testbed import generative
+import os
+import pathlib
+import hydra
+import wandb
+from omegaconf import DictConfig
+from datetime import datetime
+import jax
+import optax
+import matplotlib.pyplot as plt
+import plotnine as gg
 
-
-flow_num_layers = 10
-mlp_hidden_size_per_x_dim = 5
-layer_norm = False
-act_norm = True
-
-bnn_mlp_units = (5, 5)
-bnn_problem = BNNEnergyFunction(bnn_mlp_units=bnn_mlp_units)
-dim = bnn_problem.dim
-print(f"running bnn with {dim} parameters")
-
-target_log_prob = bnn_problem.log_prob
-real_nvp_flo = make_realnvp_dist_funcs(dim, flow_num_layers,
-                                       mlp_hidden_size_per_x_dim=mlp_hidden_size_per_x_dim,
-                                      layer_norm=layer_norm, act_norm=act_norm)
+from fab.utils.logging import PandasLogger, WandbLogger, Logger
+from fab.types import HaikuDistribution
+from fab.agent.fab_agent import AgentFAB
 
 
 
-batch_size = 64
-eval_batch_size = batch_size*10
-n_evals = 20
-n_iter = int(5e3)
-lr = 2e-4
-n_intermediate_distributions: int = 2
-AIS_kwargs = {"transition_operator_type": "hmc_tfp"}
-optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
-loss_type = "forward_kl"  # "forward_kl"  "alpha_2_div"
-style = "vanilla"
+def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
+    if hasattr(cfg.logger, "pandas_logger"):
+        logger = PandasLogger(save=True,
+                              save_path=save_path + "logging_hist.csv",
+                              save_period=cfg.logger.pandas_logger.save_period)
+    elif hasattr(cfg.logger, "wandb"):
+        logger = WandbLogger(**cfg.logger.wandb, config=dict(cfg))
+    else:
+        raise Exception("No logger specified, try adding the wandb or "
+                        "pandas logger to the config file.")
+    return logger
+
+def setup_flow(cfg: DictConfig, dim) -> HaikuDistribution:
+    assert cfg.flow.type == "rnvp"
+    from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
+    flow = make_realnvp_dist_funcs(
+        x_ndim=dim,
+        flow_num_layers=cfg.flow.n_layers,
+        mlp_hidden_size_per_x_dim=cfg.flow.layer_nodes_per_dim,
+        use_exp=True,
+        layer_norm=cfg.flow.layer_norm,
+        act_norm=cfg.flow.act_norm)
+    return flow
+
+def setup_target(cfg: DictConfig):
+    bnn_problem = BNNEnergyFunction(bnn_mlp_units=cfg.bnn.mlp_units)
+    dim = bnn_problem.dim
+    print(f"running bnn with {dim} parameters")
+    return bnn_problem, dim
 
 
-def make_enn(fab_agent):
+def make_enn(fab_agent: AgentFAB, bnn_problem):
+    batch_size = 10
     @jax.jit
     def enn_sampler(x, key):
         key1, key2, key3 = jax.random.split(key, 3)
         base_log_prob = fab_agent.get_base_log_prob(fab_agent.state.learnt_distribution_params)
+        target_log_prob = fab_agent.get_target_log_prob(fab_agent.state.learnt_distribution_params)
         x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
             fab_agent.state.learnt_distribution_params, rng=key1,
             sample_shape=(batch_size,))
@@ -63,71 +82,85 @@ def make_enn(fab_agent):
 
     return enn_sampler
 
-def plotter(fab_agent):
-    enn_sampler = make_enn(fab_agent)
-    plots = generative.sanity_plots(bnn_problem.problem, enn_sampler)
-    p = plots['more_enn']
-    _ = p.draw(show=True)
-    p = plots['sample_enn']
-    _ = p.draw(show=True)
+def make_wrapped_gg_plot(plot: gg.ggplot):
+    """So we can save using the savefig method in our training loop."""
+    class wrapped_gg_plot:
+        def __init__(self, plot):
+            self.plot = plot
+        def savefig(self, path):
+            self.plot.save(filename=path[:-4], path="")
+    return wrapped_gg_plot(plot)
+
+def setup_plotter(bnn_problem, show=False):
+    def plotter(fab_agent):
+        enn_sampler = make_enn(fab_agent, bnn_problem)
+        plots = generative.sanity_plots(bnn_problem.problem, enn_sampler)
+        p1 = plots['more_enn']
+        p2 = plots['sample_enn']
+        if show:
+            _ = p1.draw(show=True, return_ggplot=True)
+            _ = p2.draw(show=True, return_ggplot=True)
+        return [make_wrapped_gg_plot(p1), make_wrapped_gg_plot(p2)]
+    return plotter
 
 
-# def plotter(fab_agent):
-#     @jax.jit
-#     def get_info(state):
-#         base_log_prob = fab_agent.get_base_log_prob(state.learnt_distribution_params)
-#         target_log_prob = fab_agent.get_target_log_prob(state.learnt_distribution_params)
-#         x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
-#             state.learnt_distribution_params, rng=state.key,
-#             sample_shape=(batch_size,))
-#         x_ais_loss, _, _, _ = \
-#             fab_agent.annealed_importance_sampler.run(
-#                 x_base, log_q_x_base, state.key,
-#                 state.transition_operator_state,
-#                 base_log_prob=base_log_prob,
-#                 target_log_prob=target_log_prob
-#             )
-#         return x_base, x_ais_loss
-#
-#     fig, axs = plt.subplots(1, 2)
-#     x_base, x_ais_target = get_info(fab_agent.state)
-#     plot_marginal_pair(x_base, ax=axs[0])
-#     axs[0].set_title("base samples")
-#     plot_marginal_pair(x_ais_target, ax=axs[1])
-#     axs[1].set_title("ais samples")
-#     plt.show()
-#     return [fig]
+def _run(cfg: DictConfig):
+    if cfg.training.use_64_bit:
+        jax.config.update("jax_enable_x64", True)
+    current_time = datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%p")
+    save_path = cfg.evaluation.save_path + current_time + "/"
+    if not hasattr(cfg.logger, "wandb"):
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=False)
+    logger = setup_logger(cfg, save_path)
+    if hasattr(cfg.logger, "wandb"):
+        # if using wandb then save to wandb path
+        save_path = os.path.join(wandb.run.dir, save_path)
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=False)
+    with open(save_path + "config.txt", "w") as file:
+        file.write(str(cfg))
 
-
-fab_agent = AgentFAB(learnt_distribution=real_nvp_flo,
-                     target_log_prob=target_log_prob,
-                     n_intermediate_distributions=n_intermediate_distributions,
+    target, dim = setup_target(cfg)
+    flow = setup_flow(cfg, dim)
+    if cfg.training.max_grad_norm is not None:
+        optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip_by_global_norm(cfg.training.max_grad_norm),
+                                optax.adam(cfg.training.lr))
+    else:
+        optimizer = optax.chain(optax.zero_nans(),
+                                optax.adam(cfg.training.lr))
+    assert cfg.fab.transition_operator.type == "hmc_tfp"
+    AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
+        "additional_transition_operator_kwargs":
+                      {
+                       "n_inner_steps": cfg.fab.transition_operator.n_inner_steps}
+                  }
+    plotter = setup_plotter(target)
+    agent = AgentFAB(learnt_distribution=flow,
+                     target_log_prob=target.log_prob,
+                     n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
                      AIS_kwargs=AIS_kwargs,
+                     seed=cfg.training.seed,
                      optimizer=optimizer,
+                     loss_type=cfg.fab.loss_type,
                      plotter=plotter,
-                     loss_type=loss_type,
-                     style=style)
+                     logger=logger)
+    # now we can run the agent
+    agent.run(n_iter=cfg.training.n_iterations,
+              batch_size=cfg.training.batch_size,
+              eval_batch_size=cfg.evaluation.batch_size,
+              n_evals=cfg.evaluation.n_evals,
+              n_plots=cfg.evaluation.n_plots,
+              n_checkpoints=cfg.evaluation.n_checkpoints,
+              save=True,
+              plots_dir=os.path.join(save_path, "plots"),
+              checkpoints_dir=os.path.join(save_path, "checkpoints"))
+
+
+
+@hydra.main(config_path="./config", config_name="bnn.yaml")
+def run(cfg: DictConfig):
+    _run(cfg)
 
 
 if __name__ == '__main__':
-    plotter(fab_agent)
-    fab_agent.run(n_iter=n_iter, batch_size=batch_size, n_plots=5, n_evals=n_evals,
-                  eval_batch_size=eval_batch_size)
-    plt.plot(fab_agent.logger.history["ess_base"])
-    plt.title("ess_base")
-    plt.show()
-    plt.plot(fab_agent.logger.history["ess_ais"])
-    plt.title("ess_ais")
-    plt.show()
-
-    plt.plot(fab_agent.logger.history["eval_ess_flow"])
-    plt.title("ess_base eval")
-    plt.show()
-    plt.plot(fab_agent.logger.history["eval_ess_ais"])
-    plt.title("ess_ais eval")
-    plt.show()
-
-
-    plotter(fab_agent)
-    # x = bnn_problem.problem.train_data.x
-    # dist_y = enn_sampler(bnn_problem.problem.train_data.x, jax.random.PRNGKey(0))
+    run()

@@ -18,13 +18,13 @@ class HMCState(NamedTuple):
 class HamiltoneanMonteCarloTFP(TransitionOperator):
     def __init__(self,
                  n_intermediate_distributions: int,
-                 n_leapfrog_steps: int = 5,
+                 n_inner_steps: int = 5,
                  init_step_size: float = 1.0,
                  tune: bool = True,
                  target_accept_prob: float = 0.75,
                  adaption_rate: float = 0.05,
                  ):
-        self.n_leapfrog_steps = n_leapfrog_steps
+        self.n_leapfrog_steps = n_inner_steps
         self.n_intermediate_distributions = n_intermediate_distributions
         self.init_step_size = jnp.ones(n_intermediate_distributions) * init_step_size
         self.tune = tune
