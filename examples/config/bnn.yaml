@@ -1,11 +1,11 @@
 
 bnn:
-  mlp_units: [5,5]
+  mlp_units: [3,]
 
 flow:
   type: rnvp
   layer_nodes_per_dim: 10
-  n_layers: 10
+  n_layers: 1
   layer_norm: false
   act_norm: true
 

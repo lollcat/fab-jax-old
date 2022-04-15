@@ -202,13 +202,17 @@ class AgentFAB:
         info = self.get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss)
         return learnt_distribution_params, opt_state, info
 
-
-    @partial(jax.jit, static_argnums=(0,1))
-    def step(self, batch_size: int, state: State) -> Tuple[State, Info]:
-        key, subkey1, subkey2, subkey3 = jax.random.split(state.key, 4)
+    def forward(self, batch_size: int, state: State, key,
+                train: bool = True):
+        """Note eval we always target p, for training we sometimes experiment with
+        other targets for AIS."""
+        subkey1, subkey2 = jax.random.split(key, 2)
         # get base and target log prob
         base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
-        target_log_prob = self.get_target_log_prob(state.learnt_distribution_params)
+        if train:
+            target_log_prob = self.get_target_log_prob(state.learnt_distribution_params)
+        else:  # used for eval
+            target_log_prob = self.target_log_prob
         x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
                 state.learnt_distribution_params, rng=subkey1,
             sample_shape=(batch_size,))
@@ -221,9 +225,17 @@ class AgentFAB:
             )
         if self.soften_ais_weights:
             log_w_ais = self.clip_log_w_ais(log_w_ais)
+        return x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info
+
+
+    @partial(jax.jit, static_argnums=(0,1))
+    def step(self, batch_size: int, state: State) -> Tuple[State, Info]:
+        key, subkey1, subkey2 = jax.random.split(state.key, 3)
+        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+        ais_info = self.forward(batch_size, state, subkey1)
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_ais, log_w_ais, state.learnt_distribution_params,
-                        state.optimizer_state, subkey3)
+                        state.optimizer_state, subkey2)
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       optimizer_state=optimizer_state,
                       transition_operator_state=transition_operator_state)
@@ -254,22 +266,12 @@ class AgentFAB:
         to prevent overloading the GPU.
         """
         n_inner_batch = outer_batch_size // inner_batch_size
-        base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
-        target_log_prob = self.target_log_prob
         def scan_func(carry, x):
             key = carry
             key, subkey = jax.random.split(key)
-            x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
-                state.learnt_distribution_params, rng=state.key,
-                sample_shape=(inner_batch_size,))
-            log_w = target_log_prob(x_base) - log_q_x_base
-            x_ais, log_w_ais, transition_operator_state, ais_info = \
-                self.annealed_importance_sampler.run(
-                    x_base, log_q_x_base, subkey,
-                    state.transition_operator_state,
-                    base_log_prob=base_log_prob,
-                    target_log_prob=target_log_prob
-                )
+            x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = \
+                self.forward(inner_batch_size, state, subkey)
+            log_w = self.target_log_prob(x_base) - log_q_x_base
             return key, (log_w_ais, log_w)
 
         _, (log_w_ais, log_w) = jax.lax.scan(scan_func, state.key, jnp.arange(n_inner_batch))

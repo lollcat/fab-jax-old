@@ -1,5 +1,5 @@
 from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
-from fab.target_distributions.bnn import BNNEnergyFunction
+from fab.target_distributions.bnn_testbed import BNNEnergyFunction
 from fab.agent.fab_agent import AgentFAB
 from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2D
 import matplotlib.pyplot as plt
@@ -9,6 +9,7 @@ import copy
 from functools import partial
 import jax.numpy as jnp
 
+from neural_testbed import generative
 import os
 import pathlib
 import hydra
@@ -58,66 +59,71 @@ def setup_target(cfg: DictConfig):
     return bnn_problem, dim
 
 
-def make_sampler(fab_agent: AgentFAB, bnn_problem, state):
-    batch_size = 5
+def make_enn(fab_agent: AgentFAB, bnn_problem, state):
+    batch_size = 10
     # @jax.jit
-    def sampler(x, key):
-        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = fab_agent.forward(batch_size,
-                                                                                  state,
-                                                                                  key, train=False)
-        log_w = fab_agent.target_log_prob(x_base) - log_q_x_base
-        index_ais = jax.random.choice(jax.random.PRNGKey(0), log_w_ais.shape[0],
+    def enn_sampler(x, key):
+        key1, key2, key3 = jax.random.split(key, 3)
+        base_log_prob = fab_agent.get_base_log_prob(state.learnt_distribution_params)
+        target_log_prob = fab_agent.get_target_log_prob(state.learnt_distribution_params)
+        x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
+            state.learnt_distribution_params, rng=key1,
+            sample_shape=(batch_size,))
+        x_ais_loss, log_w_ais, _, _ = \
+            fab_agent.annealed_importance_sampler.run(
+                x_base, log_q_x_base, key2,
+                state.transition_operator_state,
+                base_log_prob=base_log_prob,
+                target_log_prob=target_log_prob
+            )
+        index = jax.random.choice(jax.random.PRNGKey(0), log_w_ais.shape[0],
                                   p=jax.nn.softmax(log_w_ais), shape=(),
                                   replace=True)
-        index_base = jax.random.choice(jax.random.PRNGKey(0), log_w.shape[0],
-                                  p=jax.nn.softmax(log_w), shape=(),
-                                  replace=True)
-        theta_tree_base = bnn_problem.array_to_tree(x_base[index_base])
-        theta_tree_ais = bnn_problem.array_to_tree(x_ais[index_ais])
-        dist_y_base = bnn_problem.bnn.apply(theta_tree_base, x)
-        dist_y_ais = bnn_problem.bnn.apply(theta_tree_ais, x)
-        return dist_y_base, dist_y_ais
-    return sampler
+        theta_tree = bnn_problem.array_to_tree(x_ais_loss[index])
+        dist_y = bnn_problem.bnn.apply(theta_tree, x)
+        return jnp.squeeze(dist_y.distribution.logits, axis=-2)  # dist_y.sample(seed=key3)
+
+    return enn_sampler
 
 
-def make_evaluator(agent, target: BNNEnergyFunction):
+def make_evaluator(agent, target):
+    # TODO: make jittable (i.e. seperate things which are a function of agent.state)
     def evaluator(outer_batch_size, inner_batch_size, state):
         key1, key2 = jax.random.split(state.key)
-        enn_sampler = make_sampler(agent, target, state)
-        test_x, test_y = target.generate_data(key1, inner_batch_size)
-        q_y_given_x_base, q_y_given_x_ais = enn_sampler(test_x, key2)
-        test_log_q_base = q_y_given_x_base.log_prob(test_y)
-        test_log_q_ais = q_y_given_x_ais.log_prob(test_y)
-        test_log_p = target.target_prob(test_x, test_y)
-        expected_kl_base = jnp.mean(test_log_p - test_log_q_base)
-        expected_kl_ais = jnp.mean(test_log_p - test_log_q_ais)
-        info = {"test_log_q_ais": jnp.mean(test_log_q_ais),
-                "test_log_q_base": jnp.mean(test_log_q_base),
-                "exp_kl_div_ais": expected_kl_ais,
-                "exp_kl_div_base": expected_kl_base}
-
+        key_batch = jax.random.split(key1, inner_batch_size)
+        enn_sampler = make_enn(agent, target, state)
+        test_x, test_y = jax.vmap(target.problem.data_sampler.test_data)(key_batch)[0]
+        test_x, test_y = jnp.squeeze(test_x, axis=1), jnp.squeeze(test_y, axis=1)
+        logits = enn_sampler(test_x, key2)
+        test_log_prob = jnp.mean(logits[test_y])
+        # quality = target.problem.evaluate_quality(enn_sampler)
+        # info = {"kl_estimate": quality.kl_estimate}
+        # info.update(quality.extra)
+        info = {"test_log_prob": test_log_prob}
         return info
     return evaluator
 
 
+def make_wrapped_gg_plot(plot: gg.ggplot):
+    """So we can save using the savefig method in our training loop."""
+    class wrapped_gg_plot:
+        def __init__(self, plot):
+            self.plot = plot
+        def savefig(self, path):
+            self.plot.save(filename=path[:-4], path="")
+    return wrapped_gg_plot(plot)
 
-def setup_plotter(bnn_problem: BNNEnergyFunction, show=True):
-    n_plots = 3
-    def plotter(fab_agent: AgentFAB):
-        fig, axs = plt.subplots(n_plots, 2)
-        keys = jax.random.split(fab_agent.state.key, n_plots)
-        for i in range(n_plots):
-            key = keys[i]
-            x_base, _, x_ais, _, _, _ = \
-                fab_agent.forward(1, fab_agent.state, key, train=False)
-            x_ais = jnp.squeeze(x_ais, axis=0)
-            x_base = jnp.squeeze(x_base, axis=0)
-            bnn_problem.plot(bnn_problem.array_to_tree(x_base), axs[i, 0])
-            bnn_problem.plot(bnn_problem.array_to_tree(x_ais), axs[i, 1])
-        fig.tight_layout()
+
+def setup_plotter(bnn_problem, show=False):
+    def plotter(fab_agent):
+        enn_sampler = jax.jit(make_enn(fab_agent, bnn_problem, fab_agent.state))
+        plots = generative.sanity_plots(bnn_problem.problem, enn_sampler)
+        p1 = plots['more_enn']
+        p2 = plots['sample_enn']
         if show:
-            fig.show()
-        return [fig]
+            _ = p1.draw(show=True, return_ggplot=True)
+            _ = p2.draw(show=True, return_ggplot=True)
+        return [make_wrapped_gg_plot(p1), make_wrapped_gg_plot(p2)]
     return plotter
 
 
@@ -162,7 +168,6 @@ def _run(cfg: DictConfig):
                      plotter=plotter,
                      logger=logger,
                      evaluator=None)
-    plotter(agent)
     evaluator = make_evaluator(agent, target)  # we need the agent to make the evaluator
     agent.evaluator = evaluator
     evaluated = evaluator(0, 2, agent.state)

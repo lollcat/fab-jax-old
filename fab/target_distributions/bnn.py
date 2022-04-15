@@ -1,4 +1,5 @@
-from typing import Tuple, Sequence
+
+from typing import Tuple, Sequence, NamedTuple, Optional
 
 import chex
 import haiku as hk
@@ -6,48 +7,106 @@ import distrax
 import jax.numpy as jnp
 import jax.random
 import numpy as np
-from neural_testbed import leaderboard
+import matplotlib.pyplot as plt
 
-problem = leaderboard.problem_from_id('classification_2d/75')
+
+class Linear(hk.Module):
+  """Linear module, adjusted for scaling, initialisation not used as we sample from prior. """
+
+  def __init__(
+      self,
+      output_size: int,
+      b_scale: float = 0.5,
+      use_bias: bool = True,
+      name: Optional[str] = None,
+
+  ):
+    super().__init__(name=name)
+    self.use_bias = use_bias
+    self.input_size = None
+    self.output_size = output_size
+    self.w_init = jnp.zeros
+    self.b_init = jnp.zeros
+    self.b_scale = b_scale
+
+  def __call__(
+      self,
+          inputs: jnp.ndarray,
+  ) -> jnp.ndarray:
+    """Computes a linear transform of the input."""
+    if not inputs.shape:
+      raise ValueError("Input must not be scalar.")
+
+    input_size = self.input_size = inputs.shape[-1]
+    output_size = self.output_size
+    dtype = inputs.dtype
+
+    w = hk.get_parameter("w", [input_size, output_size], dtype, init=self.w_init)
+    w_stddev = 1. / np.sqrt(self.input_size)
+    w = w * w_stddev
+
+    out = jnp.dot(inputs, w)
+
+    if self.use_bias:
+        b = hk.get_parameter("b", [self.output_size], dtype, init=self.b_init)
+        b = jnp.broadcast_to(b, out.shape)
+        b = b * self.b_scale
+        out = out + b
+
+    return out
 
 
 class BNN(hk.Module):
-    def __init__(self, input_dim, num_classes, mlp_units: Sequence[int] = (5, 5)):
+    def __init__(self, input_dim, num_classes, mlp_units: Sequence[int], temperature):
         super(BNN, self).__init__()
-        self.mlp = hk.nets.MLP(mlp_units + (num_classes,), activate_final=False)
-
+        self.hidden_layers = [Linear(mlp_unit, b_scale=0.5 if i == 0 else 1.0, use_bias=i == 0)
+                              for i, mlp_unit in enumerate(mlp_units)]
+        self.output_layer = Linear(num_classes, use_bias=False)
+        self.temperature = temperature
 
     def __call__(self, x):
         """We add a dimension to the logits, so that our event shape is 1, to match y."""
-        logits = self.mlp(x)[..., None, :]
+        for layer in self.hidden_layers:
+            x = layer(x)
+            x = jax.nn.relu(x)
+        logits = self.output_layer(x)[..., None, :] * 1/self.temperature
         dist = distrax.Independent(distrax.Categorical(logits=logits), reinterpreted_batch_ndims=1)
         return dist
 
 
+class Data(NamedTuple):
+    x: chex.Array
+    y: chex.Array
 
 class BNNEnergyFunction:
     def __init__(self,
-                 seed = 0,
+                 seed: int = 0,
                  prior_scale: float = 1.0,
-                 bnn_mlp_units: Sequence[int] = (3, )
+                 bnn_mlp_units: Sequence[int] = (3, 3),
+                 train_n_points: int = 10,
+                 x_scale: float = 2.0,
+                 temperature: float = 0.2,
                  ):
-        self.problem = problem
-        input_dim = problem.prior_knowledge.input_dim
-        num_classes = problem.prior_knowledge.num_classes
-
+        input_dim = 2
+        num_classes = 2
         self.prior_scale = prior_scale
+        self.x_scale = x_scale
         def forward(x):
-            bnn = BNN(input_dim, num_classes, mlp_units=bnn_mlp_units)
+            bnn = BNN(input_dim, num_classes, mlp_units=bnn_mlp_units, temperature=temperature)
             return bnn(x)
         self.bnn = hk.without_apply_rng(hk.transform(forward))
         key = jax.random.PRNGKey(seed)
-        init_params = self.bnn.init(key, self.problem.train_data.x)
+        key1, key2, key3 = jax.random.split(key, 3)
+        init_params = self.bnn.init(key, jnp.zeros(input_dim))
         flat_params, self.tree_struc = jax.tree_flatten(init_params)
         self.shapes = jax.tree_map(lambda x: x.shape, flat_params)
         self.block_n_params = [np.prod(shape) for shape in self.shapes]
         self.split_indices = np.cumsum(self.block_n_params[:-1])
         self.dim = np.sum(self.block_n_params)
+        self.target_params = self.array_to_tree(self.prior.sample(seed=key))
+        self.train_data = self.generate_data(key3, train_n_points)
         self._check_flatten_unflatten_consistency()
+
 
     def array_to_tree(self, theta: chex.Array) -> hk.Params:
         """Converts array into necessary hk.Params object"""
@@ -62,13 +121,25 @@ class BNNEnergyFunction:
         theta = jnp.concatenate(theta)
         return theta
 
+    @property
+    def prior(self) -> distrax.Distribution:
+        prior = distrax.MultivariateNormalDiag(loc=jnp.zeros(self.dim),
+                                               scale_diag=jnp.ones(self.dim)*self.prior_scale)
+        # prior = distrax.Independent(distrax.Uniform(low=-jnp.ones(self.dim)*self.prior_scale,
+        #                                             high=jnp.ones(self.dim)*self.prior_scale),
+        #                             reinterpreted_batch_ndims=1)
+        return prior
+
     def prior_prob(self, theta):
-        return jnp.sum(distrax.Normal(jnp.array(0.0), jnp.array(1.0)).log_prob(theta))
+        return self.prior.log_prob(theta)
+
+    def target_prob(self, x, y):
+        return self.bnn.apply(self.target_params, x).log_prob(y)
 
     def _log_prob_single(self, theta: chex.Array):
         theta_tree = self.array_to_tree(theta)
-        dist_y_given_x = self.bnn.apply(theta_tree, self.problem.train_data.x)
-        log_p_y_given_x = jnp.sum(dist_y_given_x.log_prob(self.problem.train_data.y), axis=-1)
+        dist_y_given_x = self.bnn.apply(theta_tree, self.train_data.x)
+        log_p_y_given_x = jnp.sum(dist_y_given_x.log_prob(self.train_data.y), axis=-1)
         prior = self.prior_prob(theta)
         chex.assert_equal_shape((log_p_y_given_x, prior))
         return log_p_y_given_x + prior
@@ -85,18 +156,40 @@ class BNNEnergyFunction:
         """Check that the flattening / unflattening is consistent."""
         keys = jax.random.split(jax.random.PRNGKey(0), 6)
         init_params = jax.vmap(self.bnn.init, in_axes=(0, None))(
-            keys, self.problem.train_data.x)
+            keys, self.train_data.x)
         init_params_flat = jax.vmap(self.tree_to_array)(init_params)
         init_params_ = jax.vmap(self.array_to_tree)(init_params_flat)
         chex.assert_trees_all_equal(init_params, init_params_)
         # init_params['bnn/~/mlp/~/linear_2']['w']
         log_probs = self.log_prob(init_params_flat)
-
-        #
-        init_params_single = self.bnn.init(keys[0], self.problem.train_data.x)
+        init_params_single = self.bnn.init(keys[0], self.train_data.x)
         init_params_single_flat = self.tree_to_array(init_params_single)
         log_prob_single = self._log_prob_single(init_params_single_flat)
         assert log_prob_single == log_probs[0]
+
+
+    def generate_data(self, key, n_points) -> Data:
+        key1, key2 = jax.random.split(key)
+        x = jax.random.normal(key, shape=(n_points, 2))*self.x_scale
+        dist_y = self.bnn.apply(self.target_params, x)
+        y = dist_y.sample(seed=key2)
+        return Data(x=x, y=y)
+
+    def plot(self, params, ax: Optional[plt.Axes] = None):
+        width = self.x_scale*3
+        x1, x2 = jnp.meshgrid(jnp.linspace(-width, width, 20), jnp.linspace(-width, width, 20))
+        x = jnp.stack([x1.flatten(), x2.flatten()], axis=-1)
+        y_dist: distrax.Categorical = self.bnn.apply(params, x)
+        y = y_dist.distribution.logits
+        if ax is None:
+            fig, ax = plt.subplots(1)
+        prob_1 = jax.nn.softmax(jnp.squeeze(y, axis=1), axis=-1)[:, 0].reshape(x1.shape)
+        cs = ax.contourf(x1, x2, prob_1, cmap=plt.get_cmap("coolwarm"))
+        plt.colorbar(cs, ax=ax)
+        x_red = self.train_data.x[jnp.squeeze(self.train_data.y == 0, axis=-1)]
+        x_blue = self.train_data.x[jnp.squeeze(self.train_data.y == 1, axis=-1)]
+        ax.plot(x_red[:, 0], x_red[:, 1], "o", color="red")
+        ax.plot(x_blue[:, 0], x_blue[:, 1], "o", color="blue")
 
 
 
@@ -104,8 +197,11 @@ class BNNEnergyFunction:
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(0)
-    bnn_target = BNNEnergyFunction()
+    bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=200,
+                                   bnn_mlp_units=(3, 3), x_scale=2.0, temperature=0.2)
     print(bnn_target.dim)
-    init_params = bnn_target.bnn.init(key, bnn_target.problem.train_data.x)
+    init_params = bnn_target.bnn.init(key, bnn_target.train_data.x)
     bnn_target._log_prob_single(bnn_target.tree_to_array(init_params))
     bnn_target._check_flatten_unflatten_consistency()
+    bnn_target.plot(bnn_target.target_params)
+    plt.show()
