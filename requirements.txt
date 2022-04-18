@@ -1,7 +1,4 @@
 dm-acme
-chex
-dm-haiku
-optax
 tensorflow
 tensorflow-probability
 distrax
