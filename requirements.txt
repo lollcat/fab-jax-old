@@ -1,7 +1,7 @@
-dm-haiku=0.0.6
-chex=0.1.2
-optax=0.1.2
-dm-acme=0.4.0
+dm-haiku==0.0.6
+chex==0.1.2
+optax==0.1.2
+dm-acme==0.4.0
 tensorflow
 tensorflow-probability
 tensorflow-datasets
