@@ -198,7 +198,7 @@ class BNNEnergyFunction:
 if __name__ == '__main__':
     key = jax.random.PRNGKey(0)
     bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=200,
-                                   bnn_mlp_units=(3, 3), x_scale=2.0, temperature=0.2)
+                                   bnn_mlp_units=(5, 5), x_scale=2.0, temperature=0.2)
     print(bnn_target.dim)
     init_params = bnn_target.bnn.init(key, bnn_target.train_data.x)
     bnn_target._log_prob_single(bnn_target.tree_to_array(init_params))

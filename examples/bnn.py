@@ -1,7 +1,3 @@
-import chex
-from fab.target_distributions.bnn import BNNEnergyFunction
-import jax.numpy as jnp
-
 import os
 import pathlib
 import hydra
@@ -9,12 +5,15 @@ import wandb
 from omegaconf import DictConfig
 from datetime import datetime
 import jax
+import jax.numpy as jnp
+import chex
 import optax
 import matplotlib.pyplot as plt
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.agent.fab_agent import AgentFAB
+from fab.target_distributions.bnn import BNNEnergyFunction
 
 
 

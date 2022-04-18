@@ -1,6 +1,4 @@
 dm-acme
-neural_testbed @ git+https://github.com/deepmind/neural_testbed.git
-blackjax
 chex
 dm-haiku
 optax

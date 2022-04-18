@@ -1,4 +1,6 @@
-"""It would probably be good to do last layer flow with testbed, as it needs big models."""
+"""It would probably be good to do last layer flow with testbed, as it needs big models.
+neural_testbed @ git+https://github.com/deepmind/neural_testbed.git
+"""
 from typing import Tuple, Sequence
 
 import chex
