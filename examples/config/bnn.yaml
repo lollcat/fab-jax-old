@@ -9,7 +9,8 @@ flow:
   layer_norm: false
   act_norm: true
 
-fab:
+agent:
+  agent_type: fab # fab or bbb
   loss_type: alpha_2_div
   transition_operator:
     type: hmc_tfp

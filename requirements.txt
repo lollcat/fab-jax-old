@@ -1,11 +1,13 @@
-dm-haiku==0.0.6
-chex==0.1.2
-optax==0.1.2
-dm-acme==0.4.0
+dm-acme
+neural_testbed @ git+https://github.com/deepmind/neural_testbed.git
+blackjax
+chex
+dm-haiku
+optax
 tensorflow
 tensorflow-probability
-tensorflow-datasets
 distrax
+tensorflow-datasets
 wandb
 tqdm
 pandas
@@ -14,4 +16,3 @@ jupyterlab
 hydra-core
 hydra-joblib-launcher
 joblib
-

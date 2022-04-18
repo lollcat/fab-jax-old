@@ -6,13 +6,14 @@ from omegaconf import DictConfig
 from datetime import datetime
 import jax
 import jax.numpy as jnp
-import chex
+# import chex # getting an issue with this when running on the cluster
 import optax
 import matplotlib.pyplot as plt
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.agent.fab_agent import AgentFAB
+from fab.agent.bbb_agent import AgentBBB
 from fab.target_distributions.bnn import BNNEnergyFunction
 
 
@@ -78,7 +79,7 @@ def make_evaluator(agent, target: BNNEnergyFunction):
             test_x, test_y = target.generate_data(key1, tau)
             log_q_y_base, log_q_y_ais = enn_sampler(key2, test_x, test_y)
             test_log_p = jnp.sum(target.target_prob(test_x, test_y), axis=0)
-            chex.assert_equal_shape((log_q_y_ais, log_q_y_base, test_log_p))
+            # chex.assert_equal_shape((log_q_y_ais, log_q_y_base, test_log_p))
             return log_q_y_base, log_q_y_ais, test_log_p
         
         key_batch = jax.random.split(state.key, inner_batch_size)
@@ -139,23 +140,36 @@ def _run(cfg: DictConfig):
     else:
         optimizer = optax.chain(optax.zero_nans(),
                                 optax.adam(cfg.training.lr))
-    assert cfg.fab.transition_operator.type == "hmc_tfp"
-    AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
+    assert cfg.agent.transition_operator.type == "hmc_tfp"
+    AIS_kwargs = {"transition_operator_type": cfg.agent.transition_operator.type,
         "additional_transition_operator_kwargs":
                       {
-                       "n_inner_steps": cfg.fab.transition_operator.n_inner_steps}
+                       "n_inner_steps": cfg.agent.transition_operator.n_inner_steps}
                   }
     plotter = setup_plotter(target)
-    agent = AgentFAB(learnt_distribution=flow,
-                     target_log_prob=target.log_prob,
-                     n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
-                     AIS_kwargs=AIS_kwargs,
-                     seed=cfg.training.seed,
-                     optimizer=optimizer,
-                     loss_type=cfg.fab.loss_type,
-                     plotter=plotter,
-                     logger=logger,
-                     evaluator=None)
+    if cfg.agent.agent_type == "fab":
+        agent = AgentFAB(learnt_distribution=flow,
+                         target_log_prob=target.log_prob,
+                         n_intermediate_distributions=cfg.agent.n_intermediate_distributions,
+                         AIS_kwargs=AIS_kwargs,
+                         seed=cfg.training.seed,
+                         optimizer=optimizer,
+                         loss_type=cfg.agent.loss_type,
+                         plotter=plotter,
+                         logger=logger,
+                         evaluator=None)
+    else:
+        assert cfg.agent.agent_type == "bbb"
+        agent = AgentBBB(learnt_distribution=flow,
+                         target_log_prob=target.log_prob,
+                         n_intermediate_distributions=cfg.agent.n_intermediate_distributions,
+                         AIS_kwargs=AIS_kwargs,
+                         seed=cfg.training.seed,
+                         optimizer=optimizer,
+                         loss_type=cfg.agent.loss_type,
+                         plotter=plotter,
+                         logger=logger,
+                         evaluator=None)
     plotter(agent)
     evaluator = make_evaluator(agent, target)  # we need the agent to make the evaluator
     agent.evaluator = evaluator
@@ -171,12 +185,14 @@ def _run(cfg: DictConfig):
               save=True,
               plots_dir=os.path.join(save_path, "plots"),
               checkpoints_dir=os.path.join(save_path, "checkpoints"))
+    return agent
 
 
 
 @hydra.main(config_path="./config", config_name="bnn.yaml")
 def run(cfg: DictConfig):
-    _run(cfg)
+    agent = _run(cfg)
+
 
 
 if __name__ == '__main__':
