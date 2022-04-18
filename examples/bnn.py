@@ -1,12 +1,5 @@
-from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
+import chex
 from fab.target_distributions.bnn import BNNEnergyFunction
-from fab.agent.fab_agent import AgentFAB
-from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2D
-import matplotlib.pyplot as plt
-import optax
-import jax
-import copy
-from functools import partial
 import jax.numpy as jnp
 
 import os
@@ -18,7 +11,6 @@ from datetime import datetime
 import jax
 import optax
 import matplotlib.pyplot as plt
-import plotnine as gg
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
@@ -58,41 +50,44 @@ def setup_target(cfg: DictConfig):
     return bnn_problem, dim
 
 
-def make_sampler(fab_agent: AgentFAB, bnn_problem, state):
+def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
     batch_size = 5
-    # @jax.jit
-    def sampler(x, key):
-        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = fab_agent.forward(batch_size,
-                                                                                  state,
-                                                                                  key, train=False)
+    def joint_log_prob(theta, x, y):
+        # sum over sequence of x and y datapoints
+        return jnp.sum(bnn_problem.bnn.apply(theta, x).log_prob(y))
+
+    def get_posterior_log_prob(key, x, y):
+        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = \
+            fab_agent.forward(batch_size,  state, key, train=False)
         log_w = fab_agent.target_log_prob(x_base) - log_q_x_base
-        index_ais = jax.random.choice(jax.random.PRNGKey(0), log_w_ais.shape[0],
-                                  p=jax.nn.softmax(log_w_ais), shape=(),
-                                  replace=True)
-        index_base = jax.random.choice(jax.random.PRNGKey(0), log_w.shape[0],
-                                  p=jax.nn.softmax(log_w), shape=(),
-                                  replace=True)
-        theta_tree_base = bnn_problem.array_to_tree(x_base[index_base])
-        theta_tree_ais = bnn_problem.array_to_tree(x_ais[index_ais])
-        dist_y_base = bnn_problem.bnn.apply(theta_tree_base, x)
-        dist_y_ais = bnn_problem.bnn.apply(theta_tree_ais, x)
-        return dist_y_base, dist_y_ais
-    return sampler
+        theta_tree_base = jax.vmap(bnn_problem.array_to_tree)(x_base)
+        theta_tree_ais = jax.vmap(bnn_problem.array_to_tree)(x_ais)
+        log_q_y_base = jax.vmap(joint_log_prob, in_axes=(0, None, None))(theta_tree_base, x, y)
+        log_q_y_ais = jax.vmap(joint_log_prob, in_axes=(0, None, None))(theta_tree_ais, x, y)
+        log_q_y_base = jnp.sum(jax.nn.softmax(log_w, axis=0) * log_q_y_base, axis=0)
+        log_q_y_ais = jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_y_ais, axis=0)
+        return log_q_y_base, log_q_y_ais
+    return get_posterior_log_prob
 
 
 def make_evaluator(agent, target: BNNEnergyFunction):
+    tau = 10
     def evaluator(outer_batch_size, inner_batch_size, state):
-        key1, key2 = jax.random.split(state.key)
-        enn_sampler = make_sampler(agent, target, state)
-        test_x, test_y = target.generate_data(key1, inner_batch_size)
-        q_y_given_x_base, q_y_given_x_ais = enn_sampler(test_x, key2)
-        test_log_q_base = q_y_given_x_base.log_prob(test_y)
-        test_log_q_ais = q_y_given_x_ais.log_prob(test_y)
-        test_log_p = target.target_prob(test_x, test_y)
-        expected_kl_base = jnp.mean(test_log_p - test_log_q_base)
-        expected_kl_ais = jnp.mean(test_log_p - test_log_q_ais)
-        info = {"test_log_q_ais": jnp.mean(test_log_q_ais),
-                "test_log_q_base": jnp.mean(test_log_q_base),
+        enn_sampler = make_posterior_log_prob(agent, target, state)
+        def evaluate(rng_key):
+            key1, key2 = jax.random.split(rng_key)
+            test_x, test_y = target.generate_data(key1, tau)
+            log_q_y_base, log_q_y_ais = enn_sampler(key2, test_x, test_y)
+            test_log_p = jnp.sum(target.target_prob(test_x, test_y), axis=0)
+            chex.assert_equal_shape((log_q_y_ais, log_q_y_base, test_log_p))
+            return log_q_y_base, log_q_y_ais, test_log_p
+        
+        key_batch = jax.random.split(state.key, inner_batch_size)
+        log_q_y_base, log_q_y_ais, test_log_p = jax.vmap(evaluate)(key_batch)
+        expected_kl_base = jnp.mean(test_log_p - log_q_y_base)
+        expected_kl_ais = jnp.mean(test_log_p - log_q_y_ais)
+        info = {"test_log_q_ais": jnp.mean(log_q_y_ais),
+                "test_log_q_base": jnp.mean(log_q_y_base),
                 "exp_kl_div_ais": expected_kl_ais,
                 "exp_kl_div_base": expected_kl_base}
 
@@ -102,9 +97,9 @@ def make_evaluator(agent, target: BNNEnergyFunction):
 
 
 def setup_plotter(bnn_problem: BNNEnergyFunction, show=True):
-    n_plots = 3
+    n_plots = 5
     def plotter(fab_agent: AgentFAB):
-        fig, axs = plt.subplots(n_plots, 2)
+        fig, axs = plt.subplots(n_plots, 2, figsize=(10, 4*n_plots))
         keys = jax.random.split(fab_agent.state.key, n_plots)
         for i in range(n_plots):
             key = keys[i]
