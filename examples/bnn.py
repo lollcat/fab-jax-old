@@ -45,7 +45,8 @@ def setup_flow(cfg: DictConfig, dim) -> HaikuDistribution:
 
 def setup_target(cfg: DictConfig):
     bnn_problem = BNNEnergyFunction(bnn_mlp_units=cfg.bnn.mlp_units,
-                                    train_n_points=cfg.bnn.n_train_datapoints)
+                                    train_n_points=cfg.bnn.n_train_datapoints,
+                                    seed=cfg.bnn.seed)
     dim = bnn_problem.dim
     print(f"running bnn with {dim} parameters")
     return bnn_problem, dim

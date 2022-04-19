@@ -2,6 +2,7 @@
 bnn:
   mlp_units: [3,]
   n_train_datapoints: 3
+  seed: 0
 
 flow:
   type: rnvp
@@ -11,7 +12,7 @@ flow:
   act_norm: true
 
 agent:
-  agent_type: fab # Options: fab bbb target_samples
+  agent_type: target_samples # Options: fab bbb target_samples
   loss_type: alpha_2_div
   transition_operator:
     type: hmc_tfp

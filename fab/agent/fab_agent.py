@@ -200,6 +200,7 @@ class AgentFAB:
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
         info = self.get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss)
+        info.update(grad_norm=optax.global_norm(grads))
         return learnt_distribution_params, opt_state, info
 
     def forward(self, batch_size: int, state: State, key,
@@ -324,7 +325,7 @@ class AgentFAB:
                 info = to_numpy(info)
                 info.update(step=i)
                 self.logger.write(info)
-                if i % max(10*logging_freq, 100):
+                if i % max(10*logging_freq, 100) == 0:
                     pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
             if n_evals is not None:
                 if i in eval_iter:

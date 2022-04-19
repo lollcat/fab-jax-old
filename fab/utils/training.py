@@ -7,11 +7,19 @@ class DatasetIterator:
     def __init__(self, batch_size: int, dataset: chex.Array):
         self.batch_size = batch_size
         self.n_splits = int(np.ceil(dataset.shape[0] / batch_size))  # roundup
-        self.dataset_iter = iter(np.array_split(dataset, self.n_splits))
+        self.dataset = dataset
+        self.dataset_iter = iter(np.array_split(self.dataset, self.n_splits))
         self.n_points = dataset.shape[0]
+        self.count = 0
 
     def __next__(self):
-        return next(self.dataset_iter)
+        result = next(self.dataset_iter)
+        self.count += 1
+        if self.count == self.__len__():
+            self.count = 0
+            self.dataset_iter = iter(np.array_split(self.dataset, self.n_splits))
+            raise StopIteration
+        return result
 
     def __iter__(self):
         return self

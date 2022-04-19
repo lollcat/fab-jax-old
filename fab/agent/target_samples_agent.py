@@ -61,7 +61,8 @@ class AgentTargetSamples(AgentFAB):
         updates, opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
-        info = {"loss": loss}
+        info = {"loss": loss,
+                "grad_norm": optax.global_norm(grads)}
         return learnt_distribution_params, opt_state, info
 
     @partial(jax.jit, static_argnums=(0,))
@@ -138,7 +139,7 @@ class AgentTargetSamples(AgentFAB):
                 info = to_numpy(info)
                 info.update(step=i)
                 self.logger.write(info)
-                if i % max(10*logging_freq, 100):
+                if i % max(10*logging_freq, 100) == 0:
                     pbar.set_description(f"ess_ais: {info['ess_ais']}, ess_base: {info['ess_base']}")
             if n_evals is not None:
                 if i in eval_iter:

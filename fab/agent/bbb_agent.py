@@ -23,8 +23,7 @@ class AgentBBB(AgentFAB):
 
     def loss(self, batch_size, learnt_distribution_params, rng_key):
         kl_loss = self.reverse_kl_loss(batch_size, learnt_distribution_params, rng_key)
-        loss = kl_loss * self.reverse_kl_loss_coeff
-        return loss
+        return kl_loss
 
 
     def update(self, batch_size, learnt_distribution_params, opt_state, rng_key):
