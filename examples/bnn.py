@@ -76,9 +76,8 @@ def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
         return log_q_y_base, log_q_y_ais
     return get_posterior_log_prob
 
-def setup_dataset(target: BNNEnergyFunction, size):
-    num_results = size
-    num_burnin_steps = int(2e3)
+def setup_dataset(target: BNNEnergyFunction, total_size, batch_size = 100):
+    num_burnin_steps = min(int(2e3), total_size // batch_size)
     # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
     init_key, sample_key = jax.random.split(jax.random.PRNGKey(0))
     init_params = jnp.zeros(target.dim)
@@ -90,16 +89,19 @@ def setup_dataset(target: BNNEnergyFunction, size):
                 num_leapfrog_steps=3,
                 step_size=1.),
             num_adaptation_steps=int(num_burnin_steps * 0.8))
-        return tfp.mcmc.sample_chain(
-                      num_results=num_results,
+        states, acceptance_probs = tfp.mcmc.sample_chain(
+                      num_results=total_size,
                       num_burnin_steps=num_burnin_steps,
-                      current_state=jnp.zeros(target.dim),
+                      num_steps_between_results=10,
+                      current_state=jnp.zeros((target.dim, )),
                       kernel=kernel,
                       trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
-                      seed=key
+                      seed=key,
+                      parallel_iterations=batch_size
         )
+        return states
     start_time = time.time()
-    states, log_probs = run_chain(sample_key, init_params)
+    states = run_chain(sample_key, init_params)
     print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
     return states
 

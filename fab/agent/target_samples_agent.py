@@ -43,10 +43,12 @@ class AgentTargetSamples(AgentFAB):
             return tfp.mcmc.sample_chain(
                       num_results=num_results,
                       num_burnin_steps=num_burnin_steps,
+                      num_steps_between_results=10,
                       current_state=jnp.zeros(self.learnt_distribution.dim),
                       kernel=kernel,
                       trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
-                      seed=init_key
+                      seed=init_key,
+                      parallel_iterations=100,
             )
         start_time = time.time()
         states, is_accepted = run_chain(sample_key, init_params)
