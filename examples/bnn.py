@@ -6,7 +6,6 @@ from omegaconf import DictConfig
 from datetime import datetime
 import jax
 import jax.numpy as jnp
-# import chex # getting an issue with this when running on the cluster
 import optax
 import matplotlib.pyplot as plt
 
@@ -14,6 +13,7 @@ from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.agent.fab_agent import AgentFAB
 from fab.agent.bbb_agent import AgentBBB
+from fab.agent.target_samples_agent import AgentTargetSamples
 from fab.target_distributions.bnn import BNNEnergyFunction
 
 
@@ -60,12 +60,14 @@ def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
         x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = \
             fab_agent.forward(batch_size,  state, key, train=False)
         log_w = fab_agent.target_log_prob(x_base) - log_q_x_base
+        log_w = log_w - jax.nn.logsumexp(log_w, axis=0)  # normalise weights
+        log_w_ais = log_w_ais - jax.nn.logsumexp(log_w_ais, axis=0)  # normalise weights
         theta_tree_base = jax.vmap(bnn_problem.array_to_tree)(x_base)
         theta_tree_ais = jax.vmap(bnn_problem.array_to_tree)(x_ais)
         log_q_y_base = jax.vmap(joint_log_prob, in_axes=(0, None, None))(theta_tree_base, x, y)
         log_q_y_ais = jax.vmap(joint_log_prob, in_axes=(0, None, None))(theta_tree_ais, x, y)
-        log_q_y_base = jnp.sum(jax.nn.softmax(log_w, axis=0) * log_q_y_base, axis=0)
-        log_q_y_ais = jnp.sum(jax.nn.softmax(log_w_ais, axis=0) * log_q_y_ais, axis=0)
+        log_q_y_base = jax.nn.logsumexp(log_w + log_q_y_base, axis=0)
+        log_q_y_ais = jax.nn.logsumexp(log_w_ais + log_q_y_ais, axis=0)
         return log_q_y_base, log_q_y_ais
     return get_posterior_log_prob
 
@@ -158,8 +160,7 @@ def _run(cfg: DictConfig):
                          plotter=plotter,
                          logger=logger,
                          evaluator=None)
-    else:
-        assert cfg.agent.agent_type == "bbb"
+    elif cfg.agent.agent_type == "bbb":
         agent = AgentBBB(learnt_distribution=flow,
                          target_log_prob=target.log_prob,
                          n_intermediate_distributions=cfg.agent.n_intermediate_distributions,
@@ -170,6 +171,20 @@ def _run(cfg: DictConfig):
                          plotter=plotter,
                          logger=logger,
                          evaluator=None)
+    elif cfg.agent.agent_type == "target_samples":
+        agent = AgentTargetSamples(
+            learnt_distribution=flow,
+                         target_log_prob=target.log_prob,
+                         n_intermediate_distributions=cfg.agent.n_intermediate_distributions,
+                         AIS_kwargs=AIS_kwargs,
+                         seed=cfg.training.seed,
+                         optimizer=optimizer,
+                         loss_type=cfg.agent.loss_type,
+                         plotter=plotter,
+                         logger=logger,
+                         evaluator=None)
+    else:
+        raise NotImplementedError
     plotter(agent)
     evaluator = make_evaluator(agent, target)  # we need the agent to make the evaluator
     agent.evaluator = evaluator
