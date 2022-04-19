@@ -34,16 +34,22 @@ class AgentTargetSamples(AgentFAB):
         init_params = jnp.zeros(self.learnt_distribution.dim)
         @jax.jit
         def run_chain(key, state):
-            kernel = tfp.mcmc.NoUTurnSampler(target_log_prob_fn=self.target_log_prob,
-                                             step_size=1e-3)
-            return tfp.mcmc.sample_chain(num_results=num_results,
-                                         current_state=state,
-                                         kernel=kernel,
-                                         trace_fn=lambda _, results: results.target_log_prob,
-                                         num_burnin_steps=num_burnin_steps,
-                                         seed=key)
+            kernel = tfp.mcmc.SimpleStepSizeAdaptation(
+                tfp.mcmc.HamiltonianMonteCarlo(
+                    target_log_prob_fn=self.target_log_prob,
+                    num_leapfrog_steps=3,
+                    step_size=1.),
+                num_adaptation_steps=int(num_burnin_steps * 0.8))
+            return tfp.mcmc.sample_chain(
+                      num_results=num_results,
+                      num_burnin_steps=num_burnin_steps,
+                      current_state=jnp.zeros(self.learnt_distribution.dim),
+                      kernel=kernel,
+                      trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
+                      seed=init_key
+            )
         start_time = time.time()
-        states, log_probs = run_chain(sample_key, init_params)
+        states, is_accepted = run_chain(sample_key, init_params)
         print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
         self.dataset = DatasetIterator(self.batch_size, states)
 

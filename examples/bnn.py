@@ -8,6 +8,8 @@ import jax
 import jax.numpy as jnp
 import optax
 import matplotlib.pyplot as plt
+import tensorflow_probability.substrates.jax as tfp
+import time
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
@@ -74,9 +76,37 @@ def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
         return log_q_y_base, log_q_y_ais
     return get_posterior_log_prob
 
+def setup_dataset(target: BNNEnergyFunction, size):
+    num_results = size
+    num_burnin_steps = int(2e3)
+    # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
+    init_key, sample_key = jax.random.split(jax.random.PRNGKey(0))
+    init_params = jnp.zeros(target.dim)
+    @jax.jit
+    def run_chain(key, state):
+        kernel = tfp.mcmc.SimpleStepSizeAdaptation(
+            tfp.mcmc.HamiltonianMonteCarlo(
+                target_log_prob_fn=target.log_prob,
+                num_leapfrog_steps=3,
+                step_size=1.),
+            num_adaptation_steps=int(num_burnin_steps * 0.8))
+        return tfp.mcmc.sample_chain(
+                      num_results=num_results,
+                      num_burnin_steps=num_burnin_steps,
+                      current_state=jnp.zeros(target.dim),
+                      kernel=kernel,
+                      trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
+                      seed=key
+        )
+    start_time = time.time()
+    states, log_probs = run_chain(sample_key, init_params)
+    print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
+    return states
 
-def make_evaluator(agent, target: BNNEnergyFunction):
+
+def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
     tau = 10
+    test_set = setup_dataset(target, test_set_size)
     def evaluator(outer_batch_size, inner_batch_size, state):
         enn_sampler = make_posterior_log_prob(agent, target, state)
         def evaluate(rng_key):
@@ -91,10 +121,13 @@ def make_evaluator(agent, target: BNNEnergyFunction):
         log_q_y_base, log_q_y_ais, test_log_p = jax.vmap(evaluate)(key_batch)
         expected_kl_base = jnp.mean(test_log_p - log_q_y_base)
         expected_kl_ais = jnp.mean(test_log_p - log_q_y_ais)
-        info = {"test_log_q_ais": jnp.mean(log_q_y_ais),
-                "test_log_q_base": jnp.mean(log_q_y_base),
-                "exp_kl_div_ais": expected_kl_ais,
-                "exp_kl_div_base": expected_kl_base}
+        test_set_log_prob = jnp.mean(agent.learnt_distribution.log_prob.apply(
+            state.learnt_distribution_params, test_set))
+        info = {"test_log_q_y_given_x_ais": jnp.mean(log_q_y_ais),
+                "test_log_q_y_given_x_base": jnp.mean(log_q_y_base),
+                "exp_kl_div_y_given_x_ais": expected_kl_ais,
+                "exp_kl_div_y_given_x_base": expected_kl_base,
+                "test_set_log_prob": test_set_log_prob}
 
         return info
     return evaluator
@@ -162,7 +195,9 @@ def _run(cfg: DictConfig):
                          loss_type=cfg.agent.loss_type,
                          plotter=plotter,
                          logger=logger,
-                         evaluator=None)
+                         evaluator=None,
+                         soften_ais_weights=cfg.agent.soften_ais_weights,
+                         max_clip_frac=cfg.agent.max_clip_frac)
     elif cfg.agent.agent_type == "bbb":
         agent = AgentBBB(learnt_distribution=flow,
                          target_log_prob=target.log_prob,
@@ -189,7 +224,7 @@ def _run(cfg: DictConfig):
     else:
         raise NotImplementedError
     plotter(agent)
-    evaluator = make_evaluator(agent, target)  # we need the agent to make the evaluator
+    evaluator = make_evaluator(agent, target, cfg.evaluation.test_set_size)  # we need the agent to make the evaluator
     agent.evaluator = evaluator
     evaluated = evaluator(0, 2, agent.state)
     print(evaluated)

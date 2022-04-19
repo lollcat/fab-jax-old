@@ -50,6 +50,7 @@ class AgentFAB:
                  plotter: Optional[Plotter] = None,
                  logger: Optional[Logger] = None,
                  evaluator: Optional[Evaluator] = None,
+                 max_clip_frac: float = 0.05,
                  ):
         self.learnt_distribution = learnt_distribution
         self.target_log_prob = target_log_prob
@@ -70,6 +71,7 @@ class AgentFAB:
         self.reverse_kl_loss_coeff = reverse_kl_loss_coeff
         self.add_reverse_kl_loss = add_reverse_kl_loss
         self.soften_ais_weights = soften_ais_weights
+        self.max_clip_frac = max_clip_frac
         self.batch_size: int
 
     def init_state(self, seed) -> State:
@@ -299,8 +301,7 @@ class AgentFAB:
             logging_freq: int = 1) -> None:
         """Train the fab model."""
         self.batch_size = batch_size
-        max_frac = 0.05
-        k = int(max_frac * self.batch_size)
+        k = int(self.max_clip_frac * self.batch_size)
         @jax.jit
         def top_k_func(a):
             return jax.lax.approx_max_k(a, k)
