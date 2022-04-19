@@ -44,17 +44,19 @@ def setup_flow(cfg: DictConfig, dim) -> HaikuDistribution:
 
 
 def setup_target(cfg: DictConfig):
-    bnn_problem = BNNEnergyFunction(bnn_mlp_units=cfg.bnn.mlp_units)
+    bnn_problem = BNNEnergyFunction(bnn_mlp_units=cfg.bnn.mlp_units,
+                                    train_n_points=cfg.bnn.n_train_datapoints)
     dim = bnn_problem.dim
     print(f"running bnn with {dim} parameters")
     return bnn_problem, dim
 
 
 def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
-    batch_size = 5
+    batch_size = 50
     def joint_log_prob(theta, x, y):
         # sum over sequence of x and y datapoints
-        return jnp.sum(bnn_problem.bnn.apply(theta, x).log_prob(y))
+        dist = bnn_problem.bnn.apply(theta, x)
+        return jnp.sum(dist.log_prob(y))
 
     def get_posterior_log_prob(key, x, y):
         x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = \

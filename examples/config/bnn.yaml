@@ -1,6 +1,7 @@
 
 bnn:
   mlp_units: [3,]
+  n_train_datapoints: 3
 
 flow:
   type: rnvp
