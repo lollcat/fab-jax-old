@@ -10,7 +10,7 @@ flow:
   act_norm: true
 
 agent:
-  agent_type: fab # fab or bbb
+  agent_type: fab # Options: fab bbb target_samples
   loss_type: alpha_2_div
   transition_operator:
     type: hmc_tfp
