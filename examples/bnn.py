@@ -107,30 +107,40 @@ def setup_dataset(target: BNNEnergyFunction, total_size, batch_size = 100):
 
 
 def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
-    tau = 10
     test_set = setup_dataset(target, test_set_size)
     def evaluator(outer_batch_size, inner_batch_size, state):
         enn_sampler = make_posterior_log_prob(agent, target, state)
-        def evaluate(rng_key):
+        def evaluate_single(rng_key, tau):
             key1, key2 = jax.random.split(rng_key)
             test_x, test_y = target.generate_data(key1, tau)
             log_q_y_base, log_q_y_ais = enn_sampler(key2, test_x, test_y)
             test_log_p = jnp.sum(target.target_prob(test_x, test_y), axis=0)
             # chex.assert_equal_shape((log_q_y_ais, log_q_y_base, test_log_p))
             return log_q_y_base, log_q_y_ais, test_log_p
-        
-        key_batch = jax.random.split(state.key, inner_batch_size)
-        log_q_y_base, log_q_y_ais, test_log_p = jax.vmap(evaluate)(key_batch)
-        expected_kl_base = jnp.mean(test_log_p - log_q_y_base)
-        expected_kl_ais = jnp.mean(test_log_p - log_q_y_ais)
+
+        def evaluate(tau):
+            key_batch = jax.random.split(state.key, 10)
+            log_q_y_base, log_q_y_ais, test_log_p = jax.vmap(evaluate_single,
+                                                             in_axes=(0, None))(key_batch, tau)
+            expected_kl_base = jnp.mean(test_log_p - log_q_y_base)
+            expected_kl_ais = jnp.mean(test_log_p - log_q_y_ais)
+            return expected_kl_base, expected_kl_ais
+
+        expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(1)
+        expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(10)
+        expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(100)
+
+
         test_set_log_prob = jnp.mean(agent.learnt_distribution.log_prob.apply(
             state.learnt_distribution_params, test_set))
-        info = {"test_log_q_y_given_x_ais": jnp.mean(log_q_y_ais),
-                "test_log_q_y_given_x_base": jnp.mean(log_q_y_base),
-                "exp_kl_div_y_given_x_ais": expected_kl_ais,
-                "exp_kl_div_y_given_x_base": expected_kl_base,
+        info = {
+                "exp_kl_div_y_given_x_ais_tau1": expected_kl_ais_tau1,
+                "exp_kl_div_y_given_x_base_tau1": expected_kl_base_tau1,
+                "exp_kl_div_y_given_x_ais_tau10": expected_kl_ais_tau10,
+                "exp_kl_div_y_given_x_base_tau10": expected_kl_base_tau10,
+                "exp_kl_div_y_given_x_ais_tau100": expected_kl_ais_tau100,
+                "exp_kl_div_y_given_x_base_tau100": expected_kl_base_tau100,
                 "test_set_log_prob": test_set_log_prob}
-
         return info
     return evaluator
 
