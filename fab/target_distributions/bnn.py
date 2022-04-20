@@ -8,6 +8,8 @@ import jax.numpy as jnp
 import jax.random
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow_probability.substrates.jax as tfp
+import time
 
 
 class Linear(hk.Module):
@@ -125,9 +127,6 @@ class BNNEnergyFunction:
     def prior(self) -> distrax.Distribution:
         prior = distrax.MultivariateNormalDiag(loc=jnp.zeros(self.dim),
                                                scale_diag=jnp.ones(self.dim)*self.prior_scale)
-        # prior = distrax.Independent(distrax.Uniform(low=-jnp.ones(self.dim)*self.prior_scale,
-        #                                             high=jnp.ones(self.dim)*self.prior_scale),
-        #                             reinterpreted_batch_ndims=1)
         return prior
 
     def prior_prob(self, theta):
@@ -191,13 +190,64 @@ class BNNEnergyFunction:
         ax.plot(x_red[:, 0], x_red[:, 1], "o", color="red")
         ax.plot(x_blue[:, 0], x_blue[:, 1], "o", color="blue")
 
+    def plot_params_batch(self, params, ax: Optional[plt.Axes] = None):
+        width = self.x_scale*3
+        x1, x2 = jnp.meshgrid(jnp.linspace(-width, width, 20), jnp.linspace(-width, width, 20))
+        x = jnp.stack([x1.flatten(), x2.flatten()], axis=-1)
+        def get_logits(params):
+            return self.bnn.apply(params, x).distribution.logits
+        y = jnp.mean(jax.vmap(get_logits)(params), axis=0)
+        if ax is None:
+            fig, ax = plt.subplots(1)
+        prob_1 = jax.nn.softmax(jnp.squeeze(y, axis=1), axis=-1)[:, 0].reshape(x1.shape)
+        cs = ax.contourf(x1, x2, prob_1, cmap=plt.get_cmap("coolwarm"))
+        plt.colorbar(cs, ax=ax)
+        x_red = self.train_data.x[jnp.squeeze(self.train_data.y == 0, axis=-1)]
+        x_blue = self.train_data.x[jnp.squeeze(self.train_data.y == 1, axis=-1)]
+        ax.plot(x_red[:, 0], x_red[:, 1], "o", color="red")
+        ax.plot(x_blue[:, 0], x_blue[:, 1], "o", color="blue")
+
+
+    def setup_posterior_dataset(self, total_size=1000, batch_size=100,
+                                shuffle=True, key=jax.random.PRNGKey(0)):
+        num_burnin_steps = int(2e3)
+        num_results = max(int(1e4), total_size)
+        # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
+        init_key, sample_key, shuffle_key = jax.random.split(key)
+        @jax.jit
+        def run_chain(key):
+            kernel = tfp.mcmc.SimpleStepSizeAdaptation(
+                tfp.mcmc.HamiltonianMonteCarlo(
+                    target_log_prob_fn=self.log_prob,
+                    num_leapfrog_steps=5,
+                    step_size=1.),
+                num_adaptation_steps=int(num_burnin_steps * 0.8))
+            states, acceptance_probs = tfp.mcmc.sample_chain(
+                num_results=num_results,
+                num_burnin_steps=num_burnin_steps,
+                num_steps_between_results=100,
+                current_state=jnp.zeros((self.dim,)),
+                kernel=kernel,
+                trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
+                seed=key,
+                parallel_iterations=batch_size
+            )
+            return states[:total_size]
+
+        start_time = time.time()
+        states = run_chain(sample_key)
+        print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
+        if shuffle:
+            states = jax.random.shuffle(x=states, key=shuffle_key, axis=0)
+        return states
+
 
 
 
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(0)
-    bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=200,
+    bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=50,
                                    bnn_mlp_units=(5, 5), x_scale=2.0, temperature=0.2)
     print(bnn_target.dim)
     init_params = bnn_target.bnn.init(key, bnn_target.train_data.x)
@@ -205,3 +255,19 @@ if __name__ == '__main__':
     bnn_target._check_flatten_unflatten_consistency()
     bnn_target.plot(bnn_target.target_params)
     plt.show()
+
+    fig, axs = plt.subplots(2, 2, figsize=(8, 8))
+    posterior_samples = bnn_target.setup_posterior_dataset()
+    posterior_samples_tree = jax.vmap(bnn_target.array_to_tree)(posterior_samples[0:10])
+
+    bnn_target.plot(bnn_target.array_to_tree(posterior_samples[0]), axs[0, 0])
+    bnn_target.plot(bnn_target.array_to_tree(posterior_samples[1]), axs[0, 1])
+    bnn_target.plot(bnn_target.array_to_tree(posterior_samples[2]), axs[1, 0])
+    bnn_target.plot_params_batch(params=posterior_samples_tree, ax=axs[1, 1])
+    axs[0, 0].set_title("p(y | x) for sample from p(theta | X, Y)")
+    axs[0, 1].set_title("p(y | x) for sample from p(theta | X, Y)")
+    axs[1, 0].set_title("p(y | x) for sample from p(theta | X, Y)")
+    axs[1, 1].set_title("Approximate Posterior marginilisng over theta")
+    plt.tight_layout()
+    plt.show()
+

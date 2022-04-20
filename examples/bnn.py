@@ -8,8 +8,6 @@ import jax
 import jax.numpy as jnp
 import optax
 import matplotlib.pyplot as plt
-import tensorflow_probability.substrates.jax as tfp
-import time
 
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
@@ -76,38 +74,9 @@ def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
         return log_q_y_base, log_q_y_ais
     return get_posterior_log_prob
 
-def setup_dataset(target: BNNEnergyFunction, total_size, batch_size = 100):
-    num_burnin_steps = min(int(2e3), total_size // batch_size)
-    # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
-    init_key, sample_key = jax.random.split(jax.random.PRNGKey(0))
-    init_params = jnp.zeros(target.dim)
-    @jax.jit
-    def run_chain(key, state):
-        kernel = tfp.mcmc.SimpleStepSizeAdaptation(
-            tfp.mcmc.HamiltonianMonteCarlo(
-                target_log_prob_fn=target.log_prob,
-                num_leapfrog_steps=3,
-                step_size=1.),
-            num_adaptation_steps=int(num_burnin_steps * 0.8))
-        states, acceptance_probs = tfp.mcmc.sample_chain(
-                      num_results=total_size,
-                      num_burnin_steps=num_burnin_steps,
-                      num_steps_between_results=10,
-                      current_state=jnp.zeros((target.dim, )),
-                      kernel=kernel,
-                      trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
-                      seed=key,
-                      parallel_iterations=batch_size
-        )
-        return states
-    start_time = time.time()
-    states = run_chain(sample_key, init_params)
-    print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
-    return states
-
 
 def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
-    test_set = setup_dataset(target, test_set_size)
+    test_set = target.setup_posterior_dataset(test_set_size)
     def evaluator(outer_batch_size, inner_batch_size, state):
         enn_sampler = make_posterior_log_prob(agent, target, state)
         def evaluate_single(rng_key, tau):
@@ -129,7 +98,6 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
         expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(1)
         expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(10)
         expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(100)
-
 
         test_set_log_prob = jnp.mean(agent.learnt_distribution.log_prob.apply(
             state.learnt_distribution_params, test_set))

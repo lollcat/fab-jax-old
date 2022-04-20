@@ -24,13 +24,15 @@ from fab.utils.training import DatasetIterator
 class AgentTargetSamples(AgentFAB):
     """Agent trained on maximum likeihood using samples from target agent"""
     dataset: DatasetIterator
+    def __init__(self, num_results=int(1e4), num_burnin_steps=int(1e3),
+                 *args, **kwargs):
+        super(AgentTargetSamples, self).__init__(*args, **kwargs)
+        self.target_samples = self.setup_dataset(num_results, num_burnin_steps)
 
-    def setup_dataset(self):
-        num_results = int(10e3)
-        num_burnin_steps = int(1e3)
+    def setup_dataset(self, num_results=int(1e4), num_burnin_steps=int(1e3), shuffle=True):
 
         # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
-        init_key, sample_key = jax.random.split(jax.random.PRNGKey(0))
+        init_key, sample_key, shuffle_key = jax.random.split(jax.random.PRNGKey(0), 3)
         init_params = jnp.zeros(self.learnt_distribution.dim)
         @jax.jit
         def run_chain(key, state):
@@ -44,16 +46,19 @@ class AgentTargetSamples(AgentFAB):
                       num_results=num_results,
                       num_burnin_steps=num_burnin_steps,
                       num_steps_between_results=10,
-                      current_state=jnp.zeros(self.learnt_distribution.dim),
+                      current_state=state,
                       kernel=kernel,
                       trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
-                      seed=init_key,
+                      seed=key,
                       parallel_iterations=100,
             )
         start_time = time.time()
         states, is_accepted = run_chain(sample_key, init_params)
         print(f"time to generate dataset: {(time.time() - start_time) / 60}  min")
-        self.dataset = DatasetIterator(self.batch_size, states)
+        if shuffle:
+            states = jax.random.shuffle(x=states, key=shuffle_key, axis=0)
+        return states
+
 
 
     def loss(self, x_samples, learnt_distribution_params, rng_key):
@@ -78,9 +83,10 @@ class AgentTargetSamples(AgentFAB):
         key, subkey = jax.random.split(state.key)
         x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
         ais_info = self.forward(self.batch_size, state, subkey)
+        key, subkey = jax.random.split(key)
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_samples, state.learnt_distribution_params,
-                        state.optimizer_state, state.key)
+                        state.optimizer_state, subkey)
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       optimizer_state=optimizer_state,
                       transition_operator_state=transition_operator_state)
@@ -125,7 +131,7 @@ class AgentTargetSamples(AgentFAB):
             logging_freq: int = 1) -> None:
         """Train the fab model."""
         self.batch_size = batch_size
-        self.setup_dataset() # create training dataset using HMC
+        self.dataset = DatasetIterator(self.batch_size, self.target_samples)
 
         if save:
             pathlib.Path(plots_dir).mkdir(exist_ok=True, parents=True)
