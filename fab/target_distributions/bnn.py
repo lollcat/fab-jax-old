@@ -213,7 +213,7 @@ class BNNEnergyFunction:
         num_burnin_steps = int(2e3)
         num_results = max(int(1e4), total_size)
         # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
-        init_key, sample_key, shuffle_key = jax.random.split(key)
+        init_key, sample_key, shuffle_key = jax.random.split(key, 3)
         @jax.jit
         def run_chain(key):
             kernel = tfp.mcmc.SimpleStepSizeAdaptation(
