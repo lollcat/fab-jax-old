@@ -166,10 +166,13 @@ class BNNEnergyFunction:
         log_prob_single = self._log_prob_single(init_params_single_flat)
         assert log_prob_single == log_probs[0]
 
+    def sample_x_data(self, key, n_points) -> jnp.array:
+        x = jax.random.normal(key, shape=(n_points, 2))*self.x_scale
+        return x
 
     def generate_data(self, key, n_points) -> Data:
         key1, key2 = jax.random.split(key)
-        x = jax.random.normal(key, shape=(n_points, 2))*self.x_scale
+        x = self.sample_x_data(key1, n_points)
         dist_y = self.bnn.apply(self.target_params, x)
         y = dist_y.sample(seed=key2)
         return Data(x=x, y=y)
@@ -210,7 +213,7 @@ class BNNEnergyFunction:
 
     def setup_posterior_dataset(self, total_size=1000, batch_size=100,
                                 shuffle=True, key=jax.random.PRNGKey(0)):
-        num_burnin_steps = int(2e3)
+        num_burnin_steps = int(5e3)
         num_results = max(int(1e4), total_size)
         # see https://www.tensorflow.org/probability/examples/TensorFlow_Probability_on_JAX
         init_key, sample_key, shuffle_key = jax.random.split(key, 3)
@@ -225,7 +228,7 @@ class BNNEnergyFunction:
             states, acceptance_probs = tfp.mcmc.sample_chain(
                 num_results=num_results,
                 num_burnin_steps=num_burnin_steps,
-                num_steps_between_results=100,
+                num_steps_between_results=10,
                 current_state=jnp.zeros((self.dim,)),
                 kernel=kernel,
                 trace_fn=lambda _, pkr: pkr.inner_results.is_accepted,
@@ -244,11 +247,10 @@ class BNNEnergyFunction:
 
 
 
-
 if __name__ == '__main__':
     key = jax.random.PRNGKey(0)
-    bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=50,
-                                   bnn_mlp_units=(5, 5), x_scale=2.0, temperature=0.2)
+    bnn_target = BNNEnergyFunction(prior_scale=1.0, seed=2, train_n_points=10,
+                                   bnn_mlp_units=(3, 3), x_scale=2.0, temperature=0.2)
     print(bnn_target.dim)
     init_params = bnn_target.bnn.init(key, bnn_target.train_data.x)
     bnn_target._log_prob_single(bnn_target.tree_to_array(init_params))
@@ -258,7 +260,7 @@ if __name__ == '__main__':
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 8))
     posterior_samples = bnn_target.setup_posterior_dataset()
-    posterior_samples_tree = jax.vmap(bnn_target.array_to_tree)(posterior_samples[0:10])
+    posterior_samples_tree = jax.vmap(bnn_target.array_to_tree)(posterior_samples[0:100])
 
     bnn_target.plot(bnn_target.array_to_tree(posterior_samples[0]), axs[0, 0])
     bnn_target.plot(bnn_target.array_to_tree(posterior_samples[1]), axs[0, 1])
