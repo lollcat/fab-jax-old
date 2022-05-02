@@ -161,16 +161,17 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             kl = jnp.mean(log_p_y - log_q_self)
             return kl
 
-        rng_key = jax.random.PRNGKey(0)  # or state.key
-        expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(rng_key, 1)
-        expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(rng_key, 10)
-        expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(rng_key, 100)
+        fixed_key = jax.random.PRNGKey(0)  # or state.key
+        changing_key = state.key
+        expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(fixed_key, 1)
+        expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(fixed_key, 10)
+        expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(fixed_key, 100)
 
         test_set_log_prob_theta = jnp.mean(agent.learnt_distribution.log_prob.apply(
             state.learnt_distribution_params, test_set_theta))
 
-        predictive_kl_base, predictive_kl_ais = predictive_kl(state, rng_key, test_set_theta)
-        predictive_kl_self = predictive_kl_with_self(rng_key, test_set_theta, alt_test_set_theta)
+        predictive_kl_base, predictive_kl_ais = predictive_kl(state, fixed_key, test_set_theta)
+        predictive_kl_self = predictive_kl_with_self(changing_key, test_set_theta, alt_test_set_theta)
 
 
         info = {
