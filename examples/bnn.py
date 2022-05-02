@@ -93,8 +93,8 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             # chex.assert_equal_shape((log_q_y_ais, log_q_y_base, test_log_p))
             return log_q_y_base, log_q_y_ais, test_log_p
 
-        def evaluate(tau):
-            key_batch = jax.random.split(state.key, 10)
+        def evaluate(rng_key, tau):
+            key_batch = jax.random.split(rng_key, 10)
             log_q_y_base, log_q_y_ais, test_log_p = jax.vmap(evaluate_single,
                                                              in_axes=(0, None))(key_batch, tau)
             expected_kl_base = jnp.mean(test_log_p - log_q_y_base)
@@ -121,8 +121,8 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             dist_y = target.bnn.apply(theta, x)
             return dist_y.distribution.logits
 
-        def predictive_kl(state, n_points_x = 100):
-            key1, key2, key3 = jax.random.split(state.key, 3)
+        def predictive_kl(state, rng_key, n_points_x = 100):
+            key1, key2, key3 = jax.random.split(rng_key, 3)
             x = target.sample_x_data(key1, n_points_x)
             test_set_theta_tree = jax.vmap(target.array_to_tree)(test_set_theta)
             logits = jnp.mean(jax.vmap(get_logits, in_axes=(0, None))(test_set_theta_tree, x),
@@ -136,15 +136,15 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             kl_base = jnp.mean(log_p_y - log_q_y_base)
             return kl_base, kl_ais
 
-
-        expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(1)
-        expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(10)
-        expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(100)
+        rng_key = jax.random.PRNGKey(0) # or state.key
+        expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(rng_key, 1)
+        expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(rng_key, 10)
+        expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(rng_key, 100)
 
         test_set_log_prob_theta = jnp.mean(agent.learnt_distribution.log_prob.apply(
             state.learnt_distribution_params, test_set_theta))
 
-        predictive_kl_base, predictive_kl_ais = predictive_kl(state)
+        predictive_kl_base, predictive_kl_ais = predictive_kl(state, rng_key)
 
         info = {
                 "exp_kl_div_y_given_x_ais_tau1": expected_kl_ais_tau1,
