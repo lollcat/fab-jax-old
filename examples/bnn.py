@@ -83,8 +83,12 @@ def make_posterior_log_prob(fab_agent: AgentFAB, bnn_problem, state):
 
 def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
     test_set_theta = target.setup_posterior_dataset(test_set_size)
+    alt_test_set_theta = target.setup_posterior_dataset(test_set_size, key=jax.random.PRNGKey(10))
+
+
     def evaluator(outer_batch_size, inner_batch_size, state):
         enn_sampler = make_posterior_log_prob(agent, target, state)
+
         def evaluate_single(rng_key, tau):
             key1, key2 = jax.random.split(rng_key)
             test_x, test_y = target.generate_data(key1, tau)
@@ -102,7 +106,7 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             return expected_kl_base, expected_kl_ais
 
 
-        def get_approx_posterior_log_prob(key, x, y):
+        def get_approx_posterior_log_prob(key, x, y, state):
             x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info = \
                 agent.forward(test_set_size, state, key, train=False)
             log_w = agent.target_log_prob(x_base) - log_q_x_base
@@ -121,22 +125,43 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
             dist_y = target.bnn.apply(theta, x)
             return dist_y.distribution.logits
 
-        def predictive_kl(state, rng_key, n_points_x = 100):
+        def predictive_kl(state, rng_key, test_theta, n_points_x = 100):
             key1, key2, key3 = jax.random.split(rng_key, 3)
             x = target.sample_x_data(key1, n_points_x)
-            test_set_theta_tree = jax.vmap(target.array_to_tree)(test_set_theta)
+            test_set_theta_tree = jax.vmap(target.array_to_tree)(test_theta)
             logits = jnp.mean(jax.vmap(get_logits, in_axes=(0, None))(test_set_theta_tree, x),
                                axis=0)
             dist_y = distrax.Independent(distrax.Categorical(logits=logits),
                                          reinterpreted_batch_ndims=1)
             y, log_p_y = dist_y.sample_and_log_prob(seed=key2)
-            log_q_y_base, log_q_y_ais = get_approx_posterior_log_prob(key3, x, y)
+            log_q_y_base, log_q_y_ais = get_approx_posterior_log_prob(key3, x, y, state)
             chex.assert_equal_shape((log_q_y_base, log_q_y_ais, log_p_y))
             kl_ais = jnp.mean(log_p_y - log_q_y_ais)
             kl_base = jnp.mean(log_p_y - log_q_y_base)
             return kl_base, kl_ais
 
-        rng_key = jax.random.PRNGKey(0) # or state.key
+
+        def predictive_kl_with_self(rng_key, test_theta, test_theta_alt, n_points_x = 100):
+            key1, key2, key3 = jax.random.split(rng_key, 3)
+            x = target.sample_x_data(key1, n_points_x)
+            test_set_theta_tree = jax.vmap(target.array_to_tree)(test_theta)
+            logits = jnp.mean(jax.vmap(get_logits, in_axes=(0, None))(test_set_theta_tree, x),
+                               axis=0)
+            dist_y = distrax.Independent(distrax.Categorical(logits=logits),
+                                         reinterpreted_batch_ndims=1)
+            y, log_p_y = dist_y.sample_and_log_prob(seed=key2)
+
+            # calculate alt posterior
+            test_set_theta_tree_alt = jax.vmap(target.array_to_tree)(test_theta_alt)
+            logits_alt = jnp.mean(jax.vmap(get_logits, in_axes=(0, None))(
+                test_set_theta_tree_alt, x), axis=0)
+            dist_y_alt = distrax.Independent(distrax.Categorical(logits=logits_alt),
+                                         reinterpreted_batch_ndims=1)
+            log_q_self = dist_y_alt.log_prob(y)
+            kl = jnp.mean(log_p_y - log_q_self)
+            return kl
+
+        rng_key = jax.random.PRNGKey(0)  # or state.key
         expected_kl_base_tau1, expected_kl_ais_tau1 = evaluate(rng_key, 1)
         expected_kl_base_tau10, expected_kl_ais_tau10 = evaluate(rng_key, 10)
         expected_kl_base_tau100, expected_kl_ais_tau100 = evaluate(rng_key, 100)
@@ -144,7 +169,9 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
         test_set_log_prob_theta = jnp.mean(agent.learnt_distribution.log_prob.apply(
             state.learnt_distribution_params, test_set_theta))
 
-        predictive_kl_base, predictive_kl_ais = predictive_kl(state, rng_key)
+        predictive_kl_base, predictive_kl_ais = predictive_kl(state, rng_key, test_set_theta)
+        predictive_kl_self = predictive_kl_with_self(rng_key, test_set_theta, alt_test_set_theta)
+
 
         info = {
                 "exp_kl_div_y_given_x_ais_tau1": expected_kl_ais_tau1,
@@ -155,7 +182,8 @@ def make_evaluator(agent, target: BNNEnergyFunction, test_set_size):
                 "exp_kl_div_y_given_x_base_tau100": expected_kl_base_tau100,
                 "test_set_log_prob_theta": test_set_log_prob_theta,
                 "predictive_kl_base": predictive_kl_base,
-                "predictive_kl_ais": predictive_kl_ais
+                "predictive_kl_ais": predictive_kl_ais,
+                "predictive_kl_self": predictive_kl_self
         }
         return info
     return evaluator
