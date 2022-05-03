@@ -17,6 +17,7 @@ from fab.types import LogProbFunc, HaikuDistribution
 from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab.utils.logging import Logger, ListLogger, to_numpy
 from fab.utils.numerical_utils import effective_sample_size_from_unnormalised_log_weights
+from fab.utils.replay_buffer import ReplayBuffer, BufferState
 
 
 class State(NamedTuple):
@@ -24,6 +25,7 @@ class State(NamedTuple):
     learnt_distribution_params: hk.Params
     optimizer_state: optax.OptState
     transition_operator_state: chex.ArrayTree
+    buffer_state: Optional[BufferState]
 
 
 Info = Dict[str, Any]
@@ -40,6 +42,8 @@ class AgentFAB:
                  target_log_prob: LogProbFunc,
                  n_intermediate_distributions: int = 2,
                  loss_type: str = "alpha_2_div",
+                 replay_buffer: Optional[ReplayBuffer] = None,
+                 n_buffer_updates_per_forward: int = 4,
                  soften_ais_weights: bool = False,
                  style: str = "vanilla",
                  add_reverse_kl_loss: bool = False,
@@ -67,26 +71,41 @@ class AgentFAB:
         self.annealed_importance_sampler = AnnealedImportanceSampler(dim=self.learnt_distribution.dim,
                 n_intermediate_distributions=n_intermediate_distributions, **AIS_kwargs)
         self.optimizer = optimizer
-        self.state = self.init_state(seed)
         self.reverse_kl_loss_coeff = reverse_kl_loss_coeff
         self.add_reverse_kl_loss = add_reverse_kl_loss
         self.soften_ais_weights = soften_ais_weights
+        self.replay_buffer = replay_buffer
+        self.n_buffer_updates_per_forward = n_buffer_updates_per_forward
         self.max_clip_frac = max_clip_frac
         self.batch_size: int
+        self.state = self.init_state(seed)
 
-    def init_state(self, seed) -> State:
+    def init_state(self, seed, batch_size: int = 100) -> State:
         key = jax.random.PRNGKey(seed)
-        key, subkey = jax.random.split(key)
+        key, subkey1, subkey2 = jax.random.split(key, 3)
 
         dummy_x = jnp.zeros((1, self.learnt_distribution.dim))
-        learnt_distribution_params = self.learnt_distribution.log_prob.init(subkey,
+        learnt_distribution_params = self.learnt_distribution.log_prob.init(subkey1,
                                                                             dummy_x)
 
         optimizer_state = self.optimizer.init(learnt_distribution_params)
         transition_operator_state = self.annealed_importance_sampler.get_init_state()
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       transition_operator_state=transition_operator_state,
-                      optimizer_state=optimizer_state)
+                      optimizer_state=optimizer_state,
+                      buffer_state=None)
+        if self.replay_buffer:
+            # add init of the buffer state
+            def sampler(rng_key):
+                # get samples to init buffer
+                x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+                ais_info = self.forward(batch_size, state, rng_key)
+                return x_ais, log_w_ais
+            buffer_state = self.replay_buffer.init(subkey2, sampler)
+            state = State(key=key, learnt_distribution_params=state.learnt_distribution_params,
+                          transition_operator_state=state.transition_operator_state,
+                          optimizer_state=state.optimizer_state,
+                          buffer_state=buffer_state)
         return state
 
     def get_base_log_prob(self, params):
@@ -139,6 +158,31 @@ class AgentFAB:
             kl_loss = self.reverse_kl_loss(batch_size, learnt_distribution_params, rng_key)
             loss = loss + kl_loss * self.reverse_kl_loss_coeff
         return loss, (log_w, log_q_x, log_p_x)
+
+    def forward(self, batch_size: int, state: State, key,
+                train: bool = True):
+        """Note eval we always target p, for training we sometimes experiment with
+        other targets for AIS."""
+        subkey1, subkey2 = jax.random.split(key, 2)
+        # get base and target log prob
+        base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
+        if train:
+            target_log_prob = self.get_target_log_prob(state.learnt_distribution_params)
+        else:  # used for eval
+            target_log_prob = self.target_log_prob
+        x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
+                state.learnt_distribution_params, rng=subkey1,
+            sample_shape=(batch_size,))
+        x_ais, log_w_ais, transition_operator_state, ais_info = \
+            self.annealed_importance_sampler.run(
+                x_base, log_q_x_base, subkey2,
+                state.transition_operator_state,
+                base_log_prob=base_log_prob,
+                target_log_prob=target_log_prob
+            )
+        if self.soften_ais_weights:
+            log_w_ais = self.clip_log_w_ais(log_w_ais)
+        return x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info
 
 
     def reverse_kl_loss(self, batch_size, learnt_distribution_params, rng_key):
@@ -205,43 +249,35 @@ class AgentFAB:
         info.update(grad_norm=optax.global_norm(grads))
         return learnt_distribution_params, opt_state, info
 
-    def forward(self, batch_size: int, state: State, key,
-                train: bool = True):
-        """Note eval we always target p, for training we sometimes experiment with
-        other targets for AIS."""
-        subkey1, subkey2 = jax.random.split(key, 2)
-        # get base and target log prob
-        base_log_prob = self.get_base_log_prob(state.learnt_distribution_params)
-        if train:
-            target_log_prob = self.get_target_log_prob(state.learnt_distribution_params)
-        else:  # used for eval
-            target_log_prob = self.target_log_prob
-        x_base, log_q_x_base = self.learnt_distribution.sample_and_log_prob.apply(
-                state.learnt_distribution_params, rng=subkey1,
-            sample_shape=(batch_size,))
-        x_ais, log_w_ais, transition_operator_state, ais_info = \
-            self.annealed_importance_sampler.run(
-                x_base, log_q_x_base, subkey2,
-                state.transition_operator_state,
-                base_log_prob=base_log_prob,
-                target_log_prob=target_log_prob
-            )
-        if self.soften_ais_weights:
-            log_w_ais = self.clip_log_w_ais(log_w_ais)
-        return x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, ais_info
-
 
     @partial(jax.jit, static_argnums=(0,1))
     def step(self, batch_size: int, state: State) -> Tuple[State, Info]:
-        key, subkey1, subkey2 = jax.random.split(state.key, 3)
+        key, subkey1, subkey2, buffer_key = jax.random.split(state.key, 4)
         x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
         ais_info = self.forward(batch_size, state, subkey1)
         learnt_distribution_params, optimizer_state, info = \
             self.update(x_ais, log_w_ais, state.learnt_distribution_params,
                         state.optimizer_state, subkey2)
-        state = State(key=key, learnt_distribution_params=learnt_distribution_params,
+        if self.replay_buffer:
+            buffer_key, subkey = jax.random.split(buffer_key)
+            for x_buff, log_w_buff in self.replay_buffer.sample_n_batches(
+                    buffer_state=state.buffer_state,
+                    n_batches=self.n_buffer_updates_per_forward,
+                    key=subkey,
+                    batch_size=batch_size):
+                buffer_key, subkey = jax.random.split(buffer_key)
+                # currently not saving buffer info
+                learnt_distribution_params, optimizer_state, buff_info = \
+                    self.update(x_buff, log_w_buff, learnt_distribution_params,
+                                optimizer_state, subkey)
+            buffer_state = self.replay_buffer.add(x_ais, log_w_ais, state.buffer_state)
+        else:
+            buffer_state = state.buffer_state
+        state = State(key=key,
+                      learnt_distribution_params=learnt_distribution_params,
                       optimizer_state=optimizer_state,
-                      transition_operator_state=transition_operator_state)
+                      transition_operator_state=transition_operator_state,
+                      buffer_state=buffer_state)
         info.update(ais_info)
         return state, info
 

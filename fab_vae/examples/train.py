@@ -39,6 +39,7 @@ def train(cfg: DictConfig):
               fab_loss_type=cfg.vae.fab_loss_type,
               latent_size=cfg.vae.latent_size,
               use_flow=cfg.vae.use_flow,
+              n_flow_layers=cfg.vae.n_flow_layers,
               use_conv=cfg.vae.use_conv,
               lr=cfg.vae.lr,
               batch_size=cfg.vae.batch_size,

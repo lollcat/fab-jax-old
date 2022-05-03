@@ -12,6 +12,7 @@ vae:
   n_samples_z_test: 20
   ais_eval: true
   n_ais_dist: 4
+  n_flow_layers: 6
 
 
 train:
