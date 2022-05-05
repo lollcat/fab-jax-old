@@ -89,7 +89,8 @@ class AgentTargetSamples(AgentFAB):
                         state.optimizer_state, subkey)
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       optimizer_state=optimizer_state,
-                      transition_operator_state=transition_operator_state)
+                      transition_operator_state=transition_operator_state,
+                      buffer_state=state.buffer_state)
         info.update(ais_info)
         return state, info
 

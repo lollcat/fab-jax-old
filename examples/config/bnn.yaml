@@ -12,7 +12,7 @@ flow:
   act_norm: true
 
 agent:
-  agent_type: target_samples # Options: fab bbb target_samples
+  agent_type: fab # Options: fab bbb target_samples
   loss_type: alpha_2_div
   transition_operator:
     type: hmc_tfp
@@ -21,6 +21,12 @@ agent:
   n_intermediate_distributions: 2
   soften_ais_weights: false
   max_clip_frac: 0.05
+
+buffer:
+  use: true
+  n_batches_buffer_sampling: 2
+  maximum_buffer_length: 1000
+  min_buffer_length: 100
 
 training:
   seed: 0

@@ -18,6 +18,7 @@ from fab.agent.fab_agent import AgentFAB
 from fab.agent.bbb_agent import AgentBBB
 from fab.agent.target_samples_agent import AgentTargetSamples
 from fab.target_distributions.bnn import BNNEnergyFunction
+from fab.utils.replay_buffer import ReplayBuffer
 
 
 
@@ -242,9 +243,18 @@ def _run(cfg: DictConfig):
                   }
     plotter = setup_plotter(target)
     if cfg.agent.agent_type == "fab":
+        if cfg.buffer.use:
+            buffer = ReplayBuffer(dim=dim,
+                                  max_length=cfg.buffer.maximum_buffer_length,
+                                  min_sample_length=cfg.buffer.min_buffer_length)
+        else:
+            buffer = None
+
         agent = AgentFAB(learnt_distribution=flow,
                          target_log_prob=target.log_prob,
                          n_intermediate_distributions=cfg.agent.n_intermediate_distributions,
+                         replay_buffer=buffer,
+                         n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
                          AIS_kwargs=AIS_kwargs,
                          seed=cfg.training.seed,
                          optimizer=optimizer,
