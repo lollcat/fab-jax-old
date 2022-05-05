@@ -23,6 +23,7 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
                  tune: bool = True,
                  target_accept_prob: float = 0.75,
                  adaption_rate: float = 0.05,
+                 min_step_size: float = 0.01,
                  ):
         self.n_leapfrog_steps = n_inner_steps
         self.n_intermediate_distributions = n_intermediate_distributions
@@ -30,6 +31,7 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
         self.tune = tune
         self.target_accept_prob = target_accept_prob
         self.adaption_rate = adaption_rate
+        self.min_step_size = min_step_size
 
 
     def get_init_state(self) -> chex.ArrayTree:
@@ -55,9 +57,13 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
         bootstrap_results = transition_kernel.bootstrap_results(x)
         x_new, result = transition_kernel.one_step(x, bootstrap_results, key)
         if self.tune:
-            step_size = transition_operator_state.step_size.at[i].set(result.new_step_size)
+            new_step_size_per_ais_loop = jnp.clip(result.new_step_size, a_min=self.min_step_size)
+            step_size = transition_operator_state.step_size.at[i].set(new_step_size_per_ais_loop)
             transition_operator_state = HMCState(step_size=step_size)
-        return x_new, transition_operator_state, {}
+            info = {"step size": step_size[i]}
+        else:
+            info = {}
+        return x_new, transition_operator_state, info
 
 
 if __name__ == '__main__':

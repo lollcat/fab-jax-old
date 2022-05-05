@@ -14,6 +14,7 @@ from fab.types import HaikuDistribution
 from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
 from fab.agent.fab_agent import AgentFAB
 from fab.target_distributions.many_well import ManyWellEnergy
+from fab.utils.replay_buffer import ReplayBuffer
 
 
 def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
@@ -49,31 +50,43 @@ def setup_plotter(batch_size, dim, target):
         n_rows = dim // 2
         fig, axs = plt.subplots(dim // 2, 2,  sharex=True, sharey=True, figsize=(10, n_rows*3))
 
+        @jax.jit
+        def get_info(state):
+            base_log_prob = fab_agent.get_base_log_prob(state.learnt_distribution_params)
+            target_log_prob = fab_agent.get_target_log_prob(state.learnt_distribution_params)
+            x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
+                state.learnt_distribution_params, rng=state.key,
+                sample_shape=(batch_size,))
+            x_ais_target, _, _, _ = \
+                fab_agent.annealed_importance_sampler.run(
+                    x_base, log_q_x_base, state.key,
+                    state.transition_operator_state,
+                    base_log_prob=base_log_prob,
+                    target_log_prob=target_log_prob
+                )
+            return x_base, x_ais_target
 
-        samples_flow = fab_agent.learnt_distribution.sample.apply(
-            fab_agent.state.learnt_distribution_params, key, (batch_size,))
-        samples_ais = fab_agent.annealed_importance_sampler.run(
-            batch_size, key, fab_agent.state.learnt_distribution_params,
-        fab_agent.state.transition_operator_state)[0]
+        x_base, x_ais_target = get_info(fab_agent.state)
 
         for i in range(n_rows):
             plot_contours_2D(target.log_prob_2D, bound=plotting_bounds, ax=axs[i, 0])
             plot_contours_2D(target.log_prob_2D, bound=plotting_bounds, ax=axs[i, 1])
 
             # plot flow samples
-            plot_marginal_pair(samples_flow, ax=axs[i, 0], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
+            plot_marginal_pair(x_base, ax=axs[i, 0], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
             axs[i, 0].set_xlabel(f"dim {i*2}")
             axs[i, 0].set_ylabel(f"dim {i*2 + 1}")
 
 
 
             # plot ais samples
-            plot_marginal_pair(samples_ais, ax=axs[i, 1], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
+            plot_marginal_pair(x_ais_target, ax=axs[i, 1], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
             axs[i, 1].set_xlabel(f"dim {i*2}")
             axs[i, 1].set_ylabel(f"dim {i*2+1}")
             plt.tight_layout()
         axs[0, 1].set_title("ais samples")
         axs[0, 0].set_title("flow samples")
+        # plt.show()
         return [fig]
     return plot
 
@@ -103,17 +116,25 @@ def _run(cfg: DictConfig):
     else:
         optimizer = optax.chain(optax.zero_nans(),
                                 optax.adamw(cfg.training.lr))
-    assert cfg.fab.transition_operator.type == "HMC"
     AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
         "additional_transition_operator_kwargs":
                       {
-                          "step_tuning_method": cfg.fab.transition_operator.step_tuning_method,
                        "n_inner_steps": cfg.fab.transition_operator.n_inner_steps}
                   }
     plotter = setup_plotter(batch_size=512, dim=dim, target=target)
+
+    if cfg.buffer.use:
+        buffer = ReplayBuffer(dim=cfg.target.dim,
+                              max_length=cfg.buffer.maximum_buffer_length,
+                              min_sample_length=cfg.buffer.min_buffer_length)
+    else:
+        buffer = None
+
     agent = AgentFAB(learnt_distribution=flow,
                      target_log_prob=target.log_prob,
                      n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
+                     replay_buffer=buffer,
+                     n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
                      AIS_kwargs=AIS_kwargs,
                      seed=cfg.training.seed,
                      optimizer=optimizer,
