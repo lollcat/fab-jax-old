@@ -222,6 +222,8 @@ class HamiltoneanMonteCarlo(TransitionOperator):
 
     def update_step_size_p_accept(self, step_size_params,
                               average_acceptance_probabilities_per_outer_loop, i):
+        average_acceptance_probabilities_per_outer_loop = jnp.nan_to_num(
+            average_acceptance_probabilities_per_outer_loop)
         multiplying_factor = jnp.where(average_acceptance_probabilities_per_outer_loop >
                                   self.target_p_accept, jnp.array(1.05),
                                        jnp.array(1.0)/1.05
@@ -229,7 +231,6 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         chex.assert_equal_shape([step_size_params[i], multiplying_factor])
         step_size_params = \
             step_size_params.at[i].set(step_size_params[i]*multiplying_factor)
-        step_size_params = jnp.nan_to_num(step_size_params)  # prevent Nans
         step_size_params = jnp.clip(step_size_params, a_min=self.min_step_size)
         return step_size_params
 
