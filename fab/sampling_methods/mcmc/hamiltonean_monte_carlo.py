@@ -39,7 +39,7 @@ class Info(NamedTuple):
 class HamiltoneanMonteCarlo(TransitionOperator):
     def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3):
+                 initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3, min_step_size=1e-3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.n_intermediate_distributions = n_intermediate_distributions
@@ -48,7 +48,9 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         self.n_inner_steps = n_inner_steps
         self._initial_step_size = initial_step_size
         self.max_grad = max_grad
+        self.min_step_size = min_step_size  # when using p_accept method
         if self.step_tuning_method == "gradient_based":
+            # currently still in "dev version"
             self.lr = lr
         elif self.step_tuning_method == "p_accept":
             self.target_p_accept = 0.65
@@ -227,6 +229,8 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         chex.assert_equal_shape([step_size_params[i], multiplying_factor])
         step_size_params = \
             step_size_params.at[i].set(step_size_params[i]*multiplying_factor)
+        step_size_params = jnp.nan_to_num(step_size_params)  # prevent Nans
+        step_size_params = jnp.clip(step_size_params, a_min=self.min_step_size)
         return step_size_params
 
 

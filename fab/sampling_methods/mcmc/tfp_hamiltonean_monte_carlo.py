@@ -57,7 +57,8 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
         bootstrap_results = transition_kernel.bootstrap_results(x)
         x_new, result = transition_kernel.one_step(x, bootstrap_results, key)
         if self.tune:
-            new_step_size_per_ais_loop = jnp.clip(result.new_step_size, a_min=self.min_step_size)
+            new_step_size = jnp.nan_to_num(result.new_step_size)
+            new_step_size_per_ais_loop = jnp.clip(new_step_size, a_min=self.min_step_size)
             step_size = transition_operator_state.step_size.at[i].set(new_step_size_per_ais_loop)
             transition_operator_state = HMCState(step_size=step_size)
             info = {"step size": step_size[i]}
