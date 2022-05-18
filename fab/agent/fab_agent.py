@@ -244,6 +244,7 @@ class AgentFAB:
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
         info = self.get_info(x_ais, log_w_ais, log_w, log_q_x, log_p_x, alpha_2_loss)
+        info.update(grad_norm=optax.global_norm(grads), update_norm=optax.global_norm(updates))
         return learnt_distribution_params, opt_state, info
 
 
