@@ -21,8 +21,22 @@ class UnitTests(absltest.TestCase):
         params = realNVP_haiku_dist.log_prob.init(next(rng), x)
         log_prob = realNVP_haiku_dist.log_prob.apply(params, x)
         chex.assert_shape(log_prob, (batch_size,))
-        samples, log_probs = realNVP_haiku_dist.sample_and_log_prob.apply(params, next(rng),
+        key = next(rng)
+        print(key)
+        samples, log_probs = realNVP_haiku_dist.sample_and_log_prob.apply(params, key,
                                                           sample_shape=(batch_size,))
+        key1 = next(rng)
+        print(key1)
+        samples_, _ = realNVP_haiku_dist.sample_and_log_prob.apply(params, key1,
+                                                                          sample_shape=(
+                                                                          batch_size,))
+        print(key)
+        samples__, _ = realNVP_haiku_dist.sample_and_log_prob.apply(params, key,
+                                                                   sample_shape=(
+                                                                       batch_size,))
+        # check randomness
+        assert (samples_ != samples).all()
+        assert (samples__ == samples).all()
         chex.assert_shape(log_probs, (batch_size,))
         chex.assert_shape(samples, (batch_size, x_n_elements))
         samples = realNVP_haiku_dist.sample.apply(params, next(rng), sample_shape=(batch_size,))

@@ -6,6 +6,7 @@ flow:
   type: rnvp
   layer_nodes_per_dim: 5
   n_layers: 5
+  use_exp: false  # otherwise use softplus
   layer_norm: false
   act_norm: true
 
