@@ -19,6 +19,8 @@ fab:
 
 buffer:
   use: true
+  prioritised: true
+  max_w_adjust: 10.0 # for prioritised replay
   n_batches_buffer_sampling: 2
   maximum_buffer_length: 1000
   min_buffer_length: 100

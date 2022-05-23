@@ -6,9 +6,9 @@ from functools import partial
 
 from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
 from fab.target_distributions.many_well import ManyWellEnergy
-from fab.agent.fab_agent import AgentFAB
+from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
 from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2D
-from fab.utils.replay_buffer import ReplayBuffer
+from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
 
 def plotter(fab_agent, log_prob_2D):
@@ -56,7 +56,7 @@ class Test_AgentFAB(absltest.TestCase):
     n_iter = int(1e3)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "vanilla"  # "vanilla"  "proptoloss"
-    n_intermediate_distributions: int = 2
+    n_intermediate_distributions: int = 3
     soften_ais_weights = False
     use_reparam_loss = False
     max_grad_norm = None
@@ -66,10 +66,10 @@ class Test_AgentFAB(absltest.TestCase):
     eval_batch_size = batch_size
 
 
-    buffer = ReplayBuffer(dim=dim,
+    buffer = PrioritisedReplayBuffer(dim=dim,
                           max_length=batch_size*100,
                           min_sample_length=batch_size*10)
-    n_buffer_updates_per_forward = 4
+    n_buffer_updates_per_forward = 8
     # buffer = None
     # AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
     AIS_kwargs = {"transition_operator_type": "hmc_tfp"}  #  "hmc_tfp", "nuts_tfp"
@@ -81,19 +81,16 @@ class Test_AgentFAB(absltest.TestCase):
                                 optax.clip_by_global_norm(max_grad_norm), optax.adam(lr))
     plotter = partial(plotter, log_prob_2D=log_prob_2D)
 
-    fab_agent = AgentFAB(learnt_distribution=real_nvp_flo,
-                         target_log_prob=target_log_prob,
-                         n_intermediate_distributions=n_intermediate_distributions,
-                         replay_buffer=buffer,
-                         n_buffer_updates_per_forward=n_buffer_updates_per_forward,
-                         AIS_kwargs=AIS_kwargs,
-                         optimizer=optimizer,
-                         loss_type=loss_type,
-                         style=style,
-                         plotter=plotter,
-                         add_reverse_kl_loss=use_reparam_loss,
-                         soften_ais_weights=soften_ais_weights,
-                         )
+    fab_agent = PrioritisedAgentFAB(learnt_distribution=real_nvp_flo,
+                                    target_log_prob=target_log_prob,
+                                    n_intermediate_distributions=n_intermediate_distributions,
+                                    replay_buffer=buffer,
+                                    n_buffer_updates_per_forward=n_buffer_updates_per_forward,
+                                    AIS_kwargs=AIS_kwargs,
+                                    optimizer=optimizer,
+                                    plotter=plotter,
+                                    max_w_adjust=10.0
+                                    )
 
     def test_fab_agent(self):
         # self.plotter(self.fab_agent)
