@@ -13,8 +13,10 @@ from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
 from fab.agent.fab_agent import AgentFAB
+from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
 from fab.target_distributions.many_well import ManyWellEnergy
 from fab.utils.replay_buffer import ReplayBuffer
+from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
 
 def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
@@ -53,7 +55,7 @@ def setup_plotter(batch_size, dim, target):
         @jax.jit
         def get_info(state):
             base_log_prob = fab_agent.get_base_log_prob(state.learnt_distribution_params)
-            target_log_prob = fab_agent.get_target_log_prob(state.learnt_distribution_params)
+            target_log_prob = fab_agent.get_ais_target_log_prob(state.learnt_distribution_params)
             x_base, log_q_x_base = fab_agent.learnt_distribution.sample_and_log_prob.apply(
                 state.learnt_distribution_params, rng=state.key,
                 sample_shape=(batch_size,))
@@ -112,10 +114,10 @@ def _run(cfg: DictConfig):
     if cfg.training.max_grad_norm is not None:
         optimizer = optax.chain(optax.zero_nans(),
                                 optax.clip_by_global_norm(cfg.training.max_grad_norm),
-                                optax.adamw(cfg.training.lr))
+                                optax.adam(cfg.training.lr))
     else:
         optimizer = optax.chain(optax.zero_nans(),
-                                optax.adamw(cfg.training.lr))
+                                optax.adam(cfg.training.lr))
     AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
         "additional_transition_operator_kwargs":
                       {
@@ -124,23 +126,41 @@ def _run(cfg: DictConfig):
     plotter = setup_plotter(batch_size=512, dim=dim, target=target)
 
     if cfg.buffer.use:
-        buffer = ReplayBuffer(dim=cfg.target.dim,
-                              max_length=cfg.buffer.maximum_buffer_length,
-                              min_sample_length=cfg.buffer.min_buffer_length)
+        if cfg.buffer.prioritised:
+            buffer = PrioritisedReplayBuffer(
+                dim=cfg.target.dim,
+                max_length=cfg.buffer.maximum_buffer_length,
+                min_sample_length=cfg.buffer.min_buffer_length)
+        else:
+            buffer = ReplayBuffer(dim=cfg.target.dim,
+                                  max_length=cfg.buffer.maximum_buffer_length,
+                                  min_sample_length=cfg.buffer.min_buffer_length)
     else:
         buffer = None
-
-    agent = AgentFAB(learnt_distribution=flow,
-                     target_log_prob=target.log_prob,
-                     n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
-                     replay_buffer=buffer,
-                     n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
-                     AIS_kwargs=AIS_kwargs,
-                     seed=cfg.training.seed,
-                     optimizer=optimizer,
-                     loss_type=cfg.fab.loss_type,
-                     plotter=plotter,
-                     logger=logger)
+    if not cfg.buffer.use or not cfg.buffer.prioritised:
+        agent = AgentFAB(learnt_distribution=flow,
+                                    target_log_prob=target.log_prob,
+                                    n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
+                                    replay_buffer=buffer,
+                                    n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
+                                    AIS_kwargs=AIS_kwargs,
+                                    seed=cfg.training.seed,
+                                    optimizer=optimizer,
+                                    loss_type=cfg.fab.loss_type,
+                                    plotter=plotter,
+                                    logger=logger)
+    else:
+        agent = PrioritisedAgentFAB(learnt_distribution=flow,
+                                    target_log_prob=target.log_prob,
+                                    n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
+                                    replay_buffer=buffer,
+                                    max_w_adjust=cfg.buffer.max_w_adjust,
+                                    n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
+                                    AIS_kwargs=AIS_kwargs,
+                                    seed=cfg.training.seed,
+                                    optimizer=optimizer,
+                                    plotter=plotter,
+                                    logger=logger)
 
     # now we can run the agent
     agent.run(n_iter=cfg.training.n_iterations,
