@@ -19,9 +19,10 @@ class Test_HMC(absltest.TestCase):
         jnp.zeros((x_ndim, )), jnp.ones((x_ndim,))).log_prob
     target_log_prob = ManyWellEnergy(dim=x_ndim).log_prob
     n_parallel_runs = 12
-    n_intermediate_distributions = 2
+    n_intermediate_distributions = 6
     AIS = AnnealedImportanceSampler(dim=x_ndim,
-                                    n_intermediate_distributions=n_intermediate_distributions)
+                                    n_intermediate_distributions=n_intermediate_distributions,
+                                    distribution_spacing_type="geometric")
     rng = hk.PRNGSequence(0)
     x = jnp.zeros((n_parallel_runs, x_ndim))
     init_transition_operator_state = AIS.transition_operator_manager.get_init_state()

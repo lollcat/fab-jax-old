@@ -113,10 +113,12 @@ class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
             self.distribution_spacing_type = "linear"
         if self.distribution_spacing_type == "geometric":
             # rough heuristic, copying ratio used in example in AIS paper
-            n_linspace_points = max(int(self.n_intermediate_distributions / 5), 2)
+            # rough heuristic, copying ratio used in example in AIS paper
+            n_linspace_points = max(int(self.n_intermediate_distributions / 4), 2)
             n_geomspace_points = self.n_intermediate_distributions - n_linspace_points
-            beta_space = jnp.concatenate([jnp.linspace(0, 0.1, n_linspace_points + 1)[:-1],
-                                   jnp.geomspace(0.1, 1, n_geomspace_points)])
+            beta_space = jnp.concatenate([jnp.linspace(0, 0.01, n_linspace_points + 3)[:-1],
+                                      jnp.geomspace(0.01, 1, n_geomspace_points)])
+            beta_space = jnp.flip(1 - beta_space)
         elif self.distribution_spacing_type == "linear":
             beta_space = jnp.linspace(0.0, 1.0, self.n_intermediate_distributions+2)
         else:
