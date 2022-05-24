@@ -63,7 +63,7 @@ class Test_AgentFAB(absltest.TestCase):
     n_evals = 4
     eval_batch_size = batch_size
 
-    base_optax_transform = optax.adam(lr)
+    base_optax_transform = optax.adabelief(lr)
     # base_optax_transform = optax.sgd(lr)
 
     buffer = PrioritisedReplayBuffer(dim=dim,

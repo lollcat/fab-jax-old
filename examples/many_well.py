@@ -135,14 +135,15 @@ def _run(cfg: DictConfig):
 
     target = ManyWellEnergy(dim=dim)
     flow = setup_flow(cfg)
+    base_optimizer = getattr(optax, cfg.training.optimizer_type)(cfg.training.lr)
     if cfg.training.max_grad_norm is not None:
         optimizer = optax.chain(optax.zero_nans(),
                                 optax.clip(cfg.training.max_grad),
                                 optax.clip_by_global_norm(cfg.training.max_grad_norm),
-                                optax.adam(cfg.training.lr))
+                                base_optimizer)
     else:
         optimizer = optax.chain(optax.zero_nans(),
-                                optax.adam(cfg.training.lr))
+                                base_optimizer)
     AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
         "additional_transition_operator_kwargs":
                       {
