@@ -30,6 +30,7 @@ training:
   seed: 0
   lr: 2e-4
   max_grad_norm: 5.0
+  max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow
   batch_size: 32
   n_iterations: 2_000
   use_64_bit: true

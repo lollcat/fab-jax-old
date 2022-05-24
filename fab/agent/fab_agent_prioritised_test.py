@@ -44,7 +44,7 @@ def plotter(fab_agent, log_prob_2D):
 
 class Test_AgentFAB(absltest.TestCase):
     # jax.config.update("jax_enable_x64", True)
-    dim = 2
+    dim = 8
     flow_num_layers = 5
     mlp_hidden_size_per_x_dim = 5
     real_nvp_flo = make_realnvp_dist_funcs(dim, flow_num_layers,
@@ -57,10 +57,8 @@ class Test_AgentFAB(absltest.TestCase):
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "vanilla"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 3
-    soften_ais_weights = False
-    use_reparam_loss = False
-    max_grad_norm = None
-    lr = 5e-4
+    max_grad_norm = 10.0
+    lr = 1e-4
     n_plots = 3
     n_evals = 4
     eval_batch_size = batch_size
@@ -69,7 +67,7 @@ class Test_AgentFAB(absltest.TestCase):
     buffer = PrioritisedReplayBuffer(dim=dim,
                           max_length=batch_size*100,
                           min_sample_length=batch_size*10)
-    n_buffer_updates_per_forward = 8
+    n_buffer_updates_per_forward = 4
     # buffer = None
     # AIS_kwargs = {"additional_transition_operator_kwargs": {"step_tuning_method": "p_accept"}}
     AIS_kwargs = {"transition_operator_type": "hmc_tfp"}  #  "hmc_tfp", "nuts_tfp"
@@ -78,6 +76,7 @@ class Test_AgentFAB(absltest.TestCase):
         optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
     else:
         optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip(100.0),
                                 optax.clip_by_global_norm(max_grad_norm), optax.adam(lr))
     plotter = partial(plotter, log_prob_2D=log_prob_2D)
 

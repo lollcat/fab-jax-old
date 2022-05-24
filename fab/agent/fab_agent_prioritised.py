@@ -154,7 +154,8 @@ class PrioritisedAgentFAB:
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
         info = {}
-        info.update(grad_norm=optax.global_norm(grads), update_norm=optax.global_norm(updates))
+        info.update(grad_norm=optax.global_norm(grads), update_norm=optax.global_norm(updates),
+                    loss=loss)
         return learnt_distribution_params, opt_state, info
 
 
@@ -204,14 +205,81 @@ class PrioritisedAgentFAB:
             log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
             log_w_adjust = log_q_old - log_q
             buffer_state = self.replay_buffer.adjust(log_w_adjust, log_q, indices, buffer_state)
-            return buffer_state, None
+            info = {"w_adjust_max": log_w_adjust.max(),
+                    "w_adjust_mean": log_w_adjust.mean(),
+                    "log_w_mean": log_q.mean()}
+            return buffer_state, info
 
-        buffer_state, _ = jax.lax.scan(
+        buffer_state, scan_info = jax.lax.scan(
             scan_w_adjust_fn,
             init=buffer_state,
             xs=minibatches
         )
+        info.update(jax.tree_map(jnp.mean, scan_info))
 
+        state = State(key=key,
+                      learnt_distribution_params=learnt_distribution_params,
+                      optimizer_state=opt_state,
+                      transition_operator_state=transition_operator_state,
+                      buffer_state=buffer_state)
+
+        return state, info
+
+    def step_no_jit(self, batch_size: int, state: State) -> Tuple[State, Info]:
+        """Perform 1 AIS forward pass, and then multiple sgd steps sampling from the prioritised
+        replay buffer."""
+        info = {}
+        # perform ais forward pass
+        key, subkey1, subkey2, buffer_key = jax.random.split(state.key, 4)
+        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+        ais_info = self.forward(batch_size, state, subkey1)
+        info.update(ais_info)
+
+        buffer_state = self.replay_buffer.add(x_ais, log_w_ais, log_q_x_base, state.buffer_state)
+
+        # now do replay sampling
+        buffer_key, subkey = jax.random.split(buffer_key)
+        minibatches = self.replay_buffer.sample_n_batches(
+                buffer_state=state.buffer_state,
+                n_batches=self.n_buffer_updates_per_forward,
+                key=subkey,
+                batch_size=batch_size)
+
+        # gradient steps on minibatches
+        def scan_sgd_step_fn(carry, xs):
+            """Perform sgd on minibatches."""
+            learnt_distribution_params, opt_state = carry
+            x, log_w, log_q_old, indices = xs
+            learnt_distribution_params, opt_state, info = self.sgd_step(x, log_q_old,
+                                                                        learnt_distribution_params,
+                                                                        opt_state)
+            return (learnt_distribution_params, opt_state), info
+
+        (learnt_distribution_params, opt_state), sgd_step_info = jax.lax.scan(
+            scan_sgd_step_fn,
+            init=(state.learnt_distribution_params, state.optimizer_state),
+            xs=minibatches
+        )
+        info.update(jax.tree_map(jnp.mean, sgd_step_info))
+
+        # adjust weights in the buffer
+        def scan_w_adjust_fn(carry, xs):
+            """Adjust weights on minibatch according to new flow params."""
+            buffer_state = carry
+            x, log_w, log_q_old, indices = xs
+            log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
+            log_w_adjust = log_q_old - log_q
+            buffer_state = self.replay_buffer.adjust(log_w_adjust, log_q, indices, buffer_state)
+            info = {"w_adjust_max": log_w_adjust.max(),
+                    "w_adjust_mean": log_w_adjust.mean(),
+                    "log_w_mean": log_q.mean()}
+            return buffer_state, info
+        buffer_state, scan_info = jax.lax.scan(
+            scan_w_adjust_fn,
+            init=buffer_state,
+            xs=minibatches
+        )
+        info.update(jax.tree_map(jnp.mean, scan_info))
         state = State(key=key,
                       learnt_distribution_params=learnt_distribution_params,
                       optimizer_state=opt_state,
@@ -284,6 +352,9 @@ class PrioritisedAgentFAB:
 
         pbar = tqdm(range(n_iter))
         for i in pbar:
+            if i >= 260:
+                pass
+                # self.step_no_jit(batch_size, self.state)
             self.state, info = self.step(batch_size, self.state)
             if i % logging_freq == 0:
                 info = to_numpy(info)

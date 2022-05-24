@@ -1,8 +1,10 @@
 """Setup full training procedure for the many well problem."""
 import os
 import pathlib
+import chex
 import hydra
 import wandb
+import jax.numpy as jnp
 from omegaconf import DictConfig
 from datetime import datetime
 import jax
@@ -12,9 +14,10 @@ import matplotlib.pyplot as plt
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
-from fab.agent.fab_agent import AgentFAB
+from fab.agent.fab_agent import AgentFAB, Evaluator
 from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
 from fab.target_distributions.many_well import ManyWellEnergy
+from fab.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP, HMCState
 from fab.utils.replay_buffer import ReplayBuffer
 from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
@@ -30,7 +33,6 @@ def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
         raise Exception("No logger specified, try adding the wandb or "
                         "pandas logger to the config file.")
     return logger
-
 
 def setup_flow(cfg: DictConfig) -> HaikuDistribution:
     assert cfg.flow.type == "rnvp"
@@ -113,6 +115,7 @@ def _run(cfg: DictConfig):
     flow = setup_flow(cfg)
     if cfg.training.max_grad_norm is not None:
         optimizer = optax.chain(optax.zero_nans(),
+                                optax.clip(cfg.training.max_grad),
                                 optax.clip_by_global_norm(cfg.training.max_grad_norm),
                                 optax.adam(cfg.training.lr))
     else:
@@ -148,7 +151,8 @@ def _run(cfg: DictConfig):
                                     optimizer=optimizer,
                                     loss_type=cfg.fab.loss_type,
                                     plotter=plotter,
-                                    logger=logger)
+                                    logger=logger,
+                         )
     else:
         agent = PrioritisedAgentFAB(learnt_distribution=flow,
                                     target_log_prob=target.log_prob,
