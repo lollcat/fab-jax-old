@@ -21,7 +21,7 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
                  n_inner_steps: int = 5,
                  init_step_size: float = 1.0,
                  tune: bool = True,
-                 target_accept_prob: float = 0.75,
+                 target_accept_prob: float = 0.65,
                  adaption_rate: float = 0.05,
                  min_step_size: float = 0.01,
                  ):

@@ -53,16 +53,18 @@ class Test_AgentFAB(absltest.TestCase):
     target_log_prob = target.log_prob
     log_prob_2D = target.log_prob_2D
     batch_size = 64
-    n_iter = int(1e3)
+    n_iter = int(5e3)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "vanilla"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 3
-    max_grad_norm = 10.0
+    max_grad_norm = None
     lr = 1e-4
     n_plots = 3
     n_evals = 4
     eval_batch_size = batch_size
 
+    base_optax_transform = optax.adam(lr)
+    # base_optax_transform = optax.sgd(lr)
 
     buffer = PrioritisedReplayBuffer(dim=dim,
                           max_length=batch_size*100,
@@ -73,11 +75,11 @@ class Test_AgentFAB(absltest.TestCase):
     AIS_kwargs = {"transition_operator_type": "hmc_tfp"}  #  "hmc_tfp", "nuts_tfp"
 
     if max_grad_norm is None:
-        optimizer = optax.chain(optax.zero_nans(), optax.adam(lr))
+        optimizer = optax.chain(optax.zero_nans(), base_optax_transform)
     else:
         optimizer = optax.chain(optax.zero_nans(),
                                 optax.clip(100.0),
-                                optax.clip_by_global_norm(max_grad_norm), optax.adam(lr))
+                                optax.clip_by_global_norm(max_grad_norm), base_optax_transform)
     plotter = partial(plotter, log_prob_2D=log_prob_2D)
 
     fab_agent = PrioritisedAgentFAB(learnt_distribution=real_nvp_flo,

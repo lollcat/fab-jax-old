@@ -15,6 +15,7 @@ fab:
   transition_operator:
     type: hmc_tfp
     n_inner_steps: 5
+    init_step_size: 0.2 # give good step size initialisation
   n_intermediate_distributions: 4
 
 buffer:

@@ -34,6 +34,28 @@ def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
                         "pandas logger to the config file.")
     return logger
 
+# TODO:
+# def setup_evaluator() -> Evaluator:
+#     test_set_folder = "datasets/manywell.np"
+#
+#     def create_test_set():
+#         log_prob_2D = ManyWellEnergy(dim=2).log_prob_2D
+#         hmc_transition_operator = HamiltoneanMonteCarloTFP(n_intermediate_distributions=1)
+#         def step(carry, xs):
+#             key = xs
+#             x, transition_operator_state = carry
+#             x_new, transition_operator_state, \
+#             info = hmc_transition_operator.run(
+#                 key,  transition_operator_state=transition_operator_state,
+#                 x=x, transition_target_log_prob=log_prob_2D, i=jnp.array(0))
+#             return x_new, transition_operator_state
+#
+#
+#     def evaluate(outer_batch_size, inner_batch_size, state):
+#
+#     return None
+
+
 def setup_flow(cfg: DictConfig) -> HaikuDistribution:
     assert cfg.flow.type == "rnvp"
     from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
@@ -124,7 +146,8 @@ def _run(cfg: DictConfig):
     AIS_kwargs = {"transition_operator_type": cfg.fab.transition_operator.type,
         "additional_transition_operator_kwargs":
                       {
-                       "n_inner_steps": cfg.fab.transition_operator.n_inner_steps}
+                       "n_inner_steps": cfg.fab.transition_operator.n_inner_steps,
+                       "init_step_size": cfg.fab.transition_operator.init_step_size}
                   }
     plotter = setup_plotter(batch_size=512, dim=dim, target=target)
 
