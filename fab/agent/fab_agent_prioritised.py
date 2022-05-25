@@ -109,8 +109,10 @@ class PrioritisedAgentFAB:
     def get_ais_target_log_prob(self, params):
         """Get the target log prob function for AIS, which is p^2/q."""
         def target_log_prob(x):
-            return 2 * self.target_log_prob(x) - self.learnt_distribution.log_prob.apply(
+            log_p = self.target_log_prob(x)
+            log_q = self.learnt_distribution.log_prob.apply(
                 params, x)
+            return 2 * log_p - log_q
         return target_log_prob
 
     def forward(self, batch_size: int, state: State, key,
@@ -138,22 +140,24 @@ class PrioritisedAgentFAB:
 
     def loss(self, x: chex.Array, log_q_old: chex.Array,
              learnt_distribution_params: chex.ArrayTree) -> \
-            chex.Array:
+            Tuple[chex.Array, Dict]:
         log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
-        w_adjust = jax.lax.stop_gradient(jnp.clip(jnp.exp(log_q_old - log_q),
-                                                  a_max=self.max_w_adjust))
-        return -jnp.mean(w_adjust*log_q)
+        w_adjust = jnp.exp(log_q_old - jax.lax.stop_gradient(log_q))
+        info = {"mean_w_adjust": jnp.mean(w_adjust),
+                "min_w_adjust": jnp.min(w_adjust),
+                "max_w_adjust": jnp.max(w_adjust)}
+        loss = -jnp.mean(jnp.clip(w_adjust, a_max=self.max_w_adjust) * log_q)
+        return loss, info
 
 
     def sgd_step(self, x: chex.Array, log_q_old: chex.Array,
                  learnt_distribution_params: chex.ArrayTree, opt_state: chex.ArrayTree):
-        loss, grads = jax.value_and_grad(
-            self.loss, argnums=2)(
+        (loss, info), grads = jax.value_and_grad(
+            self.loss, argnums=2, has_aux=True)(
             x, log_q_old, learnt_distribution_params)
         updates, opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
-        info = {}
         info.update(grad_norm=optax.global_norm(grads), update_norm=optax.global_norm(updates),
                     loss=loss)
         return learnt_distribution_params, opt_state, info
@@ -188,6 +192,9 @@ class PrioritisedAgentFAB:
             learnt_distribution_params, opt_state, info = self.sgd_step(x, log_q_old,
                                                                         learnt_distribution_params,
                                                                         opt_state)
+            info.update(sampled_log_w_std=jnp.std(log_w),
+                        sampled_log_w_mean=jnp.mean(log_w)
+                        )
             return (learnt_distribution_params, opt_state), info
 
         (learnt_distribution_params, opt_state), sgd_step_info = jax.lax.scan(
@@ -204,10 +211,12 @@ class PrioritisedAgentFAB:
             x, log_w, log_q_old, indices = xs
             log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
             log_w_adjust = log_q_old - log_q
-            buffer_state = self.replay_buffer.adjust(log_w_adjust, log_q, indices, buffer_state)
-            info = {"w_adjust_max": log_w_adjust.max(),
-                    "w_adjust_mean": log_w_adjust.mean(),
-                    "log_w_mean": log_q.mean()}
+            buffer_state = self.replay_buffer.adjust(log_w_adjustment=log_w_adjust,
+                                                     log_q=log_q, indices=indices, buffer_state=
+                                                     buffer_state)
+            info = {"w_adjust_insert_max": log_w_adjust.max(),
+                    "w_adjust_insert_mean": log_w_adjust.mean(),
+                    "log_q_mean": log_q.mean()}
             return buffer_state, info
 
         buffer_state, scan_info = jax.lax.scan(

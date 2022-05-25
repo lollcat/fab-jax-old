@@ -71,7 +71,7 @@ class PrioritisedReplayBuffer:
 
         buffer_state = PrioritisedBufferState(data=data, is_full=is_full, can_sample=can_sample,
                                               current_index=current_index)
-        while buffer_state.can_sample is False:
+        while not buffer_state.can_sample:
             # fill buffer up minimum length
             key, subkey = jax.random.split(key)
             x, log_w, log_q_old = initial_sampler(subkey)
@@ -113,8 +113,8 @@ class PrioritisedReplayBuffer:
     def sample(self, buffer_state: PrioritisedBufferState, key: chex.PRNGKey,
                batch_size: int) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
         """Return a batch of sampled data."""
-        probs = jax.nn.softmax(buffer_state.data.log_w, axis=0)
-        indices = jax.random.choice(key, jnp.arange(self.max_length), shape=(batch_size,),
+        probs = jnp.exp(buffer_state.data.log_w - jnp.max(buffer_state.data.log_w))
+        indices = jax.random.choice(key=key, a=jnp.arange(self.max_length), shape=(batch_size,),
                                     replace=False, p=probs)
         x = buffer_state.data.x[indices]
         log_w = buffer_state.data.log_w[indices]
@@ -136,6 +136,7 @@ class PrioritisedReplayBuffer:
             -> PrioritisedBufferState:
         """Adjust log weights and log q to match new value of theta, this is typically performed
         over minibatches, rather than over the whole dataset at once."""
+        chex.assert_equal_shape((log_w_adjustment, log_q, indices))
         # prevent invalid adjustments
         valid_adjustment = jnp.isfinite(log_w_adjustment) & jnp.isfinite(log_q)
         log_w = buffer_state.data.log_w[indices] + log_w_adjustment
@@ -146,8 +147,8 @@ class PrioritisedReplayBuffer:
             (buffer_state.data.log_w[indices], buffer_state.data.log_q_old[indices]))
         # adjust log weights in buffer state
         log_w = buffer_state.data.log_w.at[indices].set(log_w)
-        new_data = AISData(x=buffer_state.data.x, log_w=log_w,
-                           log_q_old=buffer_state.data.log_q_old.at[indices].set(log_q))
+        log_q_old = buffer_state.data.log_q_old.at[indices].set(log_q)
+        new_data = AISData(x=buffer_state.data.x, log_w=log_w, log_q_old=log_q_old)
         return PrioritisedBufferState(data=new_data, current_index=buffer_state.current_index,
                                       can_sample=buffer_state.can_sample,
                                       is_full=buffer_state.is_full)

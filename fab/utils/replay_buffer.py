@@ -55,7 +55,7 @@ class ReplayBuffer:
 
         buffer_state = BufferState(data=data, is_full=is_full, can_sample=can_sample,
                                    current_index=current_index)
-        while buffer_state.can_sample is False:
+        while not buffer_state.can_sample:
             # fill buffer up minimum length
             key, subkey = jax.random.split(key)
             x, log_w = initial_sampler(subkey)
