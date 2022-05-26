@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 class Energy:
     """
@@ -29,7 +28,7 @@ class Energy:
 
 
 class DoubleWellEnergy(Energy):
-    def __init__(self, dim, a=-0.5, b=-6, c=1.):
+    def __init__(self, dim, a=-0.5, b=-6.0, c=1.):
         super().__init__(dim)
         self._a = a
         self._b = b
@@ -49,15 +48,15 @@ class DoubleWellEnergy(Energy):
 
 
 class ManyWellEnergy:
-    def __init__(self, dim=4, *args, **kwargs):
+    def __init__(self, dim: int = 4, *args, **kwargs):
         assert dim % 2 == 0
         self.n_wells = dim // 2
         self.double_well_energy = DoubleWellEnergy(dim=2, *args, **kwargs)
         self.dim = dim
 
     def log_prob(self, x):
-        return sum([self.double_well_energy.log_prob(x[..., i*2:i*2+2]) for i in range(
-                self.n_wells)])
+        return jnp.sum(jnp.stack([self.double_well_energy.log_prob(x[..., i*2:i*2+2]) for i in range(
+                self.n_wells)], axis=-1), axis=-1)
 
     def log_prob_2D(self, x):
         """Marginal 2D pdf - useful for plotting."""

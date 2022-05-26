@@ -39,14 +39,14 @@ class Info(NamedTuple):
 class HamiltoneanMonteCarlo(TransitionOperator):
     def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 initial_step_size: float = 0.1, lr=1e-3, max_grad=1e3, min_step_size=1e-3):
+                 init_step_size: float = 0.1, lr=1e-3, max_grad=1e3, min_step_size=1e-3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.n_intermediate_distributions = n_intermediate_distributions
         self.step_tuning_method = step_tuning_method
         self.n_outer_steps = n_outer_steps
         self.n_inner_steps = n_inner_steps
-        self._initial_step_size = initial_step_size
+        self._initial_step_size = init_step_size
         self.max_grad = max_grad
         self.min_step_size = min_step_size  # when using p_accept method
         if self.step_tuning_method == "gradient_based":

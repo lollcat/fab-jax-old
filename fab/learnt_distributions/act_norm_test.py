@@ -21,10 +21,18 @@ def make_flow_model(event_shape):
     base_distribution = distrax.MultivariateNormalDiag(jnp.zeros(event_shape), jnp.ones(event_shape))
     return distrax.Transformed(base_distribution, flow)
 
+
 @hk.transform
 def sample_and_log_prob(dim, seed, sample_shape=(1,)) -> Tuple[Array, Array]:
   model = make_flow_model(event_shape=[dim])
   return model.sample_and_log_prob(seed=seed, sample_shape=sample_shape)
+
+
+@hk.without_apply_rng
+@hk.transform
+def log_prob(dim, x) -> Array:
+  model = make_flow_model(event_shape=[dim])
+  return model.log_prob(x)
 
 
 def test_act_norm():
@@ -50,6 +58,9 @@ def test_act_norm():
     chex.assert_shape(x, (batch_size, event_size))
     chex.assert_shape(log_prob_data, (batch_size,))
 
+
+    log_prob_check = log_prob.apply(params, dim=data.shape[-1], x=x)
+    chex.assert_trees_all_equal(log_prob_data, log_prob_check)
 
 if __name__ == '__main__':
     test_act_norm()

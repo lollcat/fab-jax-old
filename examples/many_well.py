@@ -69,12 +69,11 @@ def setup_flow(cfg: DictConfig) -> HaikuDistribution:
     return flow
 
 
-def setup_plotter(batch_size, dim, target):
+def setup_plotter(cfg, batch_size, dim, target):
     """For the many well problem."""
     def plot(fab_agent, dim=dim, key=jax.random.PRNGKey(0)):
         plotting_bounds = 3
         n_rows = dim // 2
-        fig, axs = plt.subplots(dim // 2, 2,  sharex=True, sharey=True, figsize=(10, n_rows*3))
 
         @jax.jit
         def get_info(state):
@@ -90,29 +89,56 @@ def setup_plotter(batch_size, dim, target):
                     base_log_prob=base_log_prob,
                     target_log_prob=target_log_prob
                 )
-            return x_base, x_ais_target
 
-        x_base, x_ais_target = get_info(fab_agent.state)
+            if cfg.buffer.prioritised is True:
+                buffer_samples = fab_agent.replay_buffer.sample(state.buffer_state, state.key,
+                                                                batch_size)
+                return x_base, x_ais_target, buffer_samples[0]
+            else:
+                return x_base, x_ais_target
+
+        if cfg.buffer.prioritised is True:
+            fig, axs = plt.subplots(dim // 2, 3, sharex=True, sharey=True, figsize=(10, n_rows * 3))
+            x_base, x_ais_target, x_buffer = get_info(fab_agent.state)
+        else:
+            fig, axs = plt.subplots(dim // 2, 2, sharex=True, sharey=True, figsize=(15, n_rows * 3))
+            x_base, x_ais_target = get_info(fab_agent.state)
+
 
         for i in range(n_rows):
             plot_contours_2D(target.log_prob_2D, bound=plotting_bounds, ax=axs[i, 0])
             plot_contours_2D(target.log_prob_2D, bound=plotting_bounds, ax=axs[i, 1])
 
             # plot flow samples
-            plot_marginal_pair(x_base, ax=axs[i, 0], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
+            plot_marginal_pair(x_base, ax=axs[i, 0], bounds=(-plotting_bounds, plotting_bounds),
+                               marginal_dims=(i*2, i*2+1))
             axs[i, 0].set_xlabel(f"dim {i*2}")
             axs[i, 0].set_ylabel(f"dim {i*2 + 1}")
 
 
 
             # plot ais samples
-            plot_marginal_pair(x_ais_target, ax=axs[i, 1], bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
+            plot_marginal_pair(x_ais_target, ax=axs[i, 1],
+                               bounds=(-plotting_bounds, plotting_bounds), marginal_dims=(i*2,i*2+1))
             axs[i, 1].set_xlabel(f"dim {i*2}")
             axs[i, 1].set_ylabel(f"dim {i*2+1}")
-            plt.tight_layout()
+
+            # plot buffer samples
+            if cfg.buffer.prioritised is True:
+                plot_contours_2D(target.log_prob_2D, bound=plotting_bounds, ax=axs[i, 2])
+                plot_marginal_pair(x_buffer, ax=axs[i, 2],
+                                   bounds=(-plotting_bounds, plotting_bounds),
+                                   marginal_dims=(i * 2, i * 2 + 1))
+                axs[i, 2].set_xlabel(f"dim {i * 2}")
+                axs[i, 2].set_ylabel(f"dim {i * 2 + 1}")
+
+
         axs[0, 1].set_title("ais samples")
         axs[0, 0].set_title("flow samples")
-        # plt.show()
+        if cfg.buffer.prioritised is True:
+            axs[0, 2].set_title("buffer samples")
+        plt.tight_layout()
+        plt.show()
         return [fig]
     return plot
 
@@ -150,7 +176,7 @@ def _run(cfg: DictConfig):
                        "n_inner_steps": cfg.fab.transition_operator.n_inner_steps,
                        "init_step_size": cfg.fab.transition_operator.init_step_size}
                   }
-    plotter = setup_plotter(batch_size=512, dim=dim, target=target)
+    plotter = setup_plotter(cfg, batch_size=512, dim=dim, target=target)
 
     if cfg.buffer.use:
         if cfg.buffer.prioritised:

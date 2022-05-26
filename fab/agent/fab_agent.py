@@ -96,6 +96,7 @@ class AgentFAB:
                       buffer_state=None)
         if self.replay_buffer:
             # add init of the buffer state
+            @jax.jit
             def sampler(rng_key):
                 # get samples to init buffer
                 x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \

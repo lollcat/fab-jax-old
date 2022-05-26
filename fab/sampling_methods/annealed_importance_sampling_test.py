@@ -22,7 +22,7 @@ class Test_HMC(absltest.TestCase):
     n_intermediate_distributions = 6
     AIS = AnnealedImportanceSampler(dim=x_ndim,
                                     n_intermediate_distributions=n_intermediate_distributions,
-                                    distribution_spacing_type="geometric")
+                                    distribution_spacing_type="linear")
     rng = hk.PRNGSequence(0)
     x = jnp.zeros((n_parallel_runs, x_ndim))
     init_transition_operator_state = AIS.transition_operator_manager.get_init_state()

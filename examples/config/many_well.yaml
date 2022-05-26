@@ -1,5 +1,5 @@
 target:
-  dim: 4
+  dim: 8
   name: many_well
 
 flow:
@@ -30,7 +30,7 @@ buffer:
 training:
   seed: 0
   lr: 2e-4
-  optimizer_type: adabelief # adabelief, adam
+  optimizer_type: adam # adabelief, adam
   max_grad_norm: 5.0
   max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow
   batch_size: 32

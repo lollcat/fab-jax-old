@@ -58,7 +58,7 @@ class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
         x = x_base
         log_w = log_w + intermediate_log_prob(x, 1) - log_prob_p0
         j_s = jnp.arange(1, self.n_intermediate_distributions+1)
-        keys = jax.random.split(key, self.n_intermediate_distributions)
+        keys = jax.random.split(subkey, self.n_intermediate_distributions)
         xs = (keys, j_s)
         inner_loop_func = partial(self.inner_loop_func,
                                   intermediate_log_prob=intermediate_log_prob)

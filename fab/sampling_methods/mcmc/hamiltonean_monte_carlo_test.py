@@ -25,13 +25,13 @@ class Test_HMC(absltest.TestCase):
     n_outer_steps = 3
     n_inner_steps = 4
     HMC_p_accept = HamiltoneanMonteCarlo(dim, n_intermediate_distributions,
-                     step_tuning_method="p_accept", n_outer_steps=n_outer_steps,
+                                         step_tuning_method="p_accept", n_outer_steps=n_outer_steps,
                                          n_inner_steps=n_inner_steps,
-                     initial_step_size= 1.0, lr=1e-3)
+                                         init_step_size= 1.0, lr=1e-3)
     HMC_grad_based = HamiltoneanMonteCarlo(dim, n_intermediate_distributions,
-                     step_tuning_method="gradient_based", n_outer_steps=n_outer_steps,
+                                           step_tuning_method="gradient_based", n_outer_steps=n_outer_steps,
                                            n_inner_steps=n_inner_steps,
-                     initial_step_size=1.0, lr=1e-3)
+                                           init_step_size=1.0, lr=1e-3)
 
     initial_state_p_accept = HMC_p_accept.get_init_state()
     initial_state_grad_based = HMC_grad_based.get_init_state()

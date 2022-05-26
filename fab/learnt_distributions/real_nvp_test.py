@@ -1,6 +1,6 @@
 import jax.random
 from absl.testing import absltest
-from real_nvp import make_realnvp_dist_funcs
+from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
 import jax.numpy as jnp
 import chex
 import haiku as hk
@@ -25,6 +25,8 @@ class UnitTests(absltest.TestCase):
         print(key)
         samples, log_probs = realNVP_haiku_dist.sample_and_log_prob.apply(params, key,
                                                           sample_shape=(batch_size,))
+        log_prob_check = realNVP_haiku_dist.log_prob.apply(params, samples)
+        chex.assert_equal(log_probs, log_prob_check)
         key1 = next(rng)
         print(key1)
         samples_, _ = realNVP_haiku_dist.sample_and_log_prob.apply(params, key1,
