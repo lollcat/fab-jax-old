@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 
 from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
-from fab.target_distributions.many_well import ManyWellEnergy
+from fab.target_distributions.many_well import ManyWellEnergy, setup_manywell_evaluator
 from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB, State
 from fab.utils.plotting import plot_history, plot_marginal_pair, plot_contours_2D
 from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -49,7 +49,7 @@ def plotter(fab_agent: PrioritisedAgentFAB, log_prob_2D):
 
 class Test_AgentFAB(absltest.TestCase):
     jax.config.update("jax_enable_x64", True)
-    dim = 8
+    dim = 4
     flow_num_layers = 5
     mlp_hidden_size_per_x_dim = 10
     real_nvp_flo = make_realnvp_dist_funcs(dim, flow_num_layers,
@@ -57,6 +57,7 @@ class Test_AgentFAB(absltest.TestCase):
                                            act_norm=True,
                                            layer_norm=True)
     target = ManyWellEnergy(dim=dim)
+    evaluator = setup_manywell_evaluator(target, real_nvp_flo)
     target_log_prob = target.log_prob
     log_prob_2D = target.log_prob_2D
     batch_size = 64
@@ -101,7 +102,8 @@ class Test_AgentFAB(absltest.TestCase):
                                     AIS_kwargs=AIS_kwargs,
                                     optimizer=optimizer,
                                     plotter=plotter,
-                                    max_w_adjust=10.0
+                                    max_w_adjust=10.0,
+                                    evaluator=evaluator
                                     )
 
     def test_fab_agent(self):

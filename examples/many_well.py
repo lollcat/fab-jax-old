@@ -1,4 +1,6 @@
 """Setup full training procedure for the many well problem."""
+from typing import Union
+
 import os
 import pathlib
 import chex
@@ -14,9 +16,9 @@ import matplotlib.pyplot as plt
 from fab.utils.logging import PandasLogger, WandbLogger, Logger
 from fab.types import HaikuDistribution
 from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
-from fab.agent.fab_agent import AgentFAB, Evaluator
+from fab.agent.fab_agent import AgentFAB, Evaluator, State
 from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
-from fab.target_distributions.many_well import ManyWellEnergy
+from fab.target_distributions.many_well import ManyWellEnergy, setup_manywell_evaluator
 from fab.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP, HMCState
 from fab.utils.replay_buffer import ReplayBuffer
 from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
@@ -33,27 +35,6 @@ def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
         raise Exception("No logger specified, try adding the wandb or "
                         "pandas logger to the config file.")
     return logger
-
-# TODO:
-# def setup_evaluator() -> Evaluator:
-#     test_set_folder = "datasets/manywell.np"
-#
-#     def create_test_set():
-#         log_prob_2D = ManyWellEnergy(dim=2).log_prob_2D
-#         hmc_transition_operator = HamiltoneanMonteCarloTFP(n_intermediate_distributions=1)
-#         def step(carry, xs):
-#             key = xs
-#             x, transition_operator_state = carry
-#             x_new, transition_operator_state, \
-#             info = hmc_transition_operator.run(
-#                 key,  transition_operator_state=transition_operator_state,
-#                 x=x, transition_target_log_prob=log_prob_2D, i=jnp.array(0))
-#             return x_new, transition_operator_state
-#
-#
-#     def evaluate(outer_batch_size, inner_batch_size, state):
-#
-#     return None
 
 
 def setup_flow(cfg: DictConfig) -> HaikuDistribution:
@@ -178,6 +159,8 @@ def _run(cfg: DictConfig):
                   }
     plotter = setup_plotter(cfg, batch_size=512, dim=dim, target=target)
 
+    evaluator = setup_manywell_evaluator(many_well=target, flow=flow)
+
     if cfg.buffer.use:
         if cfg.buffer.prioritised:
             buffer = PrioritisedReplayBuffer(
@@ -202,6 +185,7 @@ def _run(cfg: DictConfig):
                                     loss_type=cfg.fab.loss_type,
                                     plotter=plotter,
                                     logger=logger,
+                                    evaluator=evaluator
                          )
     else:
         agent = PrioritisedAgentFAB(learnt_distribution=flow,

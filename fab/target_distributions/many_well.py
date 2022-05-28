@@ -1,5 +1,7 @@
-import jax
 import jax.numpy as jnp
+import jax
+from fab.types import HaikuDistribution
+from fab.agent.fab_agent import Evaluator, State
 
 class Energy:
     """
@@ -54,6 +56,23 @@ class ManyWellEnergy:
         self.double_well_energy = DoubleWellEnergy(dim=2, *args, **kwargs)
         self.dim = dim
 
+        self.centre = 1.7
+        self.max_dim_for_all_modes = 40  # otherwise we get memory issues on huuuuge test set
+        if self.dim < self.max_dim_for_all_modes:
+            dim_1_vals_grid = jnp.meshgrid(*[jnp.array([-self.centre, self.centre])for _ in
+                                              range(self.n_wells)])
+            dim_1_vals = jnp.stack([dim.flatten() for dim in dim_1_vals_grid], axis=-1)
+            n_modes = 2**self.n_wells
+            assert n_modes == dim_1_vals.shape[0]
+            test_set = jnp.zeros((n_modes, dim))
+            test_set = test_set.at[:, jnp.arange(dim) % 2 == 0].set(dim_1_vals)
+            self.test_set = test_set
+        else:
+            raise NotImplementedError("still need to implement this")
+
+        self.shallow_well_bounds = [-1.75, -1.65]
+        self.deep_well_bounds = [1.7, 1.8]
+
     def log_prob(self, x):
         return jnp.sum(jnp.stack([self.double_well_energy.log_prob(x[..., i*2:i*2+2]) for i in range(
                 self.n_wells)], axis=-1), axis=-1)
@@ -63,12 +82,36 @@ class ManyWellEnergy:
         return self.double_well_energy.log_prob(x)
 
 
+def setup_manywell_evaluator(many_well: ManyWellEnergy,
+                             flow: HaikuDistribution) -> Evaluator:
+    # TODO:
+    # test_set_folder = "datasets/manywell.np"
+    #
+    # def create_test_set():
+    #     log_prob_2D = ManyWellEnergy(dim=2).log_prob_2D
+    #     hmc_transition_operator = HamiltoneanMonteCarloTFP(n_intermediate_distributions=1)
+    #     def step(carry, xs):
+    #         key = xs
+    #         x, transition_operator_state = carry
+    #         x_new, transition_operator_state, \
+    #         info = hmc_transition_operator.run(
+    #             key,  transition_operator_state=transition_operator_state,
+    #             x=x, transition_target_log_prob=log_prob_2D, i=jnp.array(0))
+    #         return x_new, transition_operator_state
+
+    def evaluate(outer_batch_size, inner_batch_size, state: State):
+        test_set_log_prob = flow.log_prob.apply(
+            state.learnt_distribution_params, many_well.test_set)
+        info = {"test_set_mean_log_prob": jnp.mean(test_set_log_prob)}
+        return info
+    return evaluate
+
+
 if __name__ == '__main__':
     dim = 2
-    energy = DoubleWellEnergy(dim=2)
+    energy = ManyWellEnergy(dim=2)
     x = jax.random.normal(jax.random.PRNGKey(42), shape=(3, dim))
     print(energy.log_prob(x))
-    print(energy.force(x))
 
     import itertools
     import matplotlib.pyplot as plt
