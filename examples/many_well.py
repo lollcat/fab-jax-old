@@ -198,7 +198,8 @@ def _run(cfg: DictConfig):
                                     seed=cfg.training.seed,
                                     optimizer=optimizer,
                                     plotter=plotter,
-                                    logger=logger)
+                                    logger=logger,
+                                    evaluator=evaluator)
 
     # now we can run the agent
     agent.run(n_iter=cfg.training.n_iterations,

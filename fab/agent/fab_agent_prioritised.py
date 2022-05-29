@@ -146,9 +146,9 @@ class PrioritisedAgentFAB:
         log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
         w_adjust = jnp.exp(log_q_old - jax.lax.stop_gradient(log_q))
         loss = -jnp.mean(jnp.clip(w_adjust, a_max=self.max_w_adjust) * log_q)
-        info = {"mean_w_adjust": jnp.mean(w_adjust),
-                "min_w_adjust": jnp.min(w_adjust),
-                "max_w_adjust": jnp.max(w_adjust),
+        info = {"w_adjust_mean": jnp.mean(w_adjust),
+                "w_adjust_min": jnp.min(w_adjust),
+                "w_adjust_max": jnp.max(w_adjust),
                 "finite_loss": jnp.isfinite(loss)}
         loss = jnp.nan_to_num(loss)
         return loss, info
@@ -218,8 +218,8 @@ class PrioritisedAgentFAB:
             buffer_state = self.replay_buffer.adjust(log_w_adjustment=log_w_adjust,
                                                      log_q=log_q, indices=indices, buffer_state=
                                                      buffer_state)
-            info = {"w_adjust_insert_max": log_w_adjust.max(),
-                    "w_adjust_insert_mean": log_w_adjust.mean(),
+            info = {"log_w_adjust_insert_max": log_w_adjust.max(),
+                    "log_w_adjust_insert_mean": log_w_adjust.mean(),
                     "log_q_mean": log_q.mean()}
             return buffer_state, info
 
