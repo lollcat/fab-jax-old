@@ -55,7 +55,8 @@ class Test_AgentFAB(absltest.TestCase):
     real_nvp_flo = make_realnvp_dist_funcs(dim, flow_num_layers,
                                            mlp_hidden_size_per_x_dim=mlp_hidden_size_per_x_dim,
                                            act_norm=True,
-                                           layer_norm=True)
+                                           layer_norm=True,
+                                           lu_layer=True)
     target = ManyWellEnergy(dim=dim)
     evaluator = setup_manywell_evaluator(target, real_nvp_flo)
     target_log_prob = target.log_prob

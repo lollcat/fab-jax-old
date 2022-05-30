@@ -46,7 +46,9 @@ def setup_flow(cfg: DictConfig) -> HaikuDistribution:
         mlp_hidden_size_per_x_dim=cfg.flow.layer_nodes_per_dim,
         use_exp=cfg.flow.use_exp,
         layer_norm=cfg.flow.layer_norm,
-        act_norm=cfg.flow.act_norm)
+        act_norm=cfg.flow.act_norm,
+        lu_layer=cfg.flow.lu_layer
+    )
     return flow
 
 

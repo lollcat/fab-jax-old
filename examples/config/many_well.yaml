@@ -9,6 +9,7 @@ flow:
   use_exp: false  # otherwise use softplus
   layer_norm: false
   act_norm: true
+  lu_layer: true
 
 fab:
   loss_type: alpha_2_div

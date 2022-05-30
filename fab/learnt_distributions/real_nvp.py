@@ -30,6 +30,7 @@ def make_realnvp_dist_funcs(
         use_exp: bool = True,
         layer_norm: bool = False,
         act_norm: bool = True,
+        lu_layer: bool = True,
 ):
 
         event_shape = (x_ndim,)  # is more general in jax example but here assume x is vector
@@ -41,7 +42,8 @@ def make_realnvp_dist_funcs(
                 hidden_sizes=[n_hidden_units] * mlp_num_layers,
                 use_exp=use_exp,
                 layer_norm=layer_norm,
-                act_norm=act_norm
+                act_norm=act_norm,
+                lu_layer=lu_layer
         )
 
         @hk.without_apply_rng
@@ -146,11 +148,13 @@ def make_flow_model(event_shape: Sequence[int],
                     hidden_sizes: Sequence[int],
                     use_exp: bool,
                     layer_norm: bool,
-                    act_norm: bool) -> distrax.Transformed:
+                    act_norm: bool,
+                    lu_layer: bool) -> distrax.Transformed:
     """Creates the flow model."""
     dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
     event_ndims = len(event_shape)
     assert event_ndims == 1  # currently only focusing on this case (all elements in 1 dim).
+    dim = event_shape[0]
     layers = []
     n_params = np.prod(event_shape)
     split_index = n_params // 2
@@ -176,6 +180,14 @@ def make_flow_model(event_shape: Sequence[int],
         if act_norm:
             act_norm_layer = ActNormBijector(event_shape=event_shape, dtype=dtype)
             layers.append(act_norm_layer)
+
+        if lu_layer:
+            matrix = hk.get_parameter("matrix_LU_layer", shape=(dim, dim), init=jnp.zeros, dtype=dtype) + \
+                     jnp.eye(dim)
+            bias = hk.get_parameter("bias_LU_layer", shape=(dim,), init=jnp.zeros, dtype=dtype)
+            lu_layer = distrax.LowerUpperTriangularAffine(
+                matrix=matrix, bias=bias)
+            layers.append(lu_layer)
 
     flow = distrax.Chain(layers)
     base_distribution = make_gaussian_base_dist(event_shape, dtype)
