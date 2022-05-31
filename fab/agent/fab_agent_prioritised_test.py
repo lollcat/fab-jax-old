@@ -54,8 +54,8 @@ class Test_AgentFAB(absltest.TestCase):
     mlp_hidden_size_per_x_dim = 10
     real_nvp_flo = make_realnvp_dist_funcs(dim, flow_num_layers,
                                            mlp_hidden_size_per_x_dim=mlp_hidden_size_per_x_dim,
-                                           act_norm=True,
-                                           layer_norm=True,
+                                           act_norm=False,
+                                           layer_norm=False,
                                            lu_layer=True)
     target = ManyWellEnergy(dim=dim)
     evaluator = setup_manywell_evaluator(target, real_nvp_flo)
@@ -66,7 +66,7 @@ class Test_AgentFAB(absltest.TestCase):
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "vanilla"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 4
-    max_grad_norm = 10.0
+    max_grad_norm = None # 10.0
     lr = 1e-4
     n_plots = 10
     n_evals = 4

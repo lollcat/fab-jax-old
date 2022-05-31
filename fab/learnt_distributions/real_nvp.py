@@ -52,21 +52,6 @@ def make_realnvp_dist_funcs(
             model = get_model()
             return model.log_prob(data)
 
-        @hk.without_apply_rng
-        @hk.transform
-        def base_z_log_prob_and_log_det(data: XPoints) -> Tuple[chex.Array, LogProbs, LogProbs]:
-            model = get_model()
-            z, log_det = model.bijector.inverse_and_log_det(data)
-            log_prob_base = model.distribution.log_prob(z)
-            return z, log_prob_base, log_det
-
-        @hk.without_apply_rng
-        @hk.transform
-        def log_det_forward(z: chex.Array) -> Tuple[XPoints, chex.Array]:
-            model = get_model()
-            x, log_det = model.bijector.forward_and_log_det(z)
-            return x, log_det
-
 
         @hk.transform
         def sample_and_log_prob(sample_shape: Tuple = ()) \
@@ -80,8 +65,7 @@ def make_realnvp_dist_funcs(
             model = get_model()
             return model.sample(seed=hk.next_rng_key(), sample_shape=sample_shape)
 
-        return HaikuDistribution(x_ndim, log_prob, sample_and_log_prob, sample,
-                                 base_z_log_prob_and_log_det, log_det_forward)
+        return HaikuDistribution(x_ndim, log_prob, sample_and_log_prob, sample)
 
 
 
