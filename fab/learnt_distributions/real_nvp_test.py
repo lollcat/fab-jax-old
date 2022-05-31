@@ -16,7 +16,9 @@ class UnitTests(absltest.TestCase):
         x_n_elements = 16
         flow_num_layers = 4
         realNVP_haiku_dist = make_realnvp_dist_funcs(
-            x_ndim=x_n_elements, flow_num_layers=flow_num_layers, act_norm=True)
+            x_ndim=x_n_elements, flow_num_layers=flow_num_layers, act_norm=True,
+            layer_norm=True, lu_layer=True
+        )
         x = jnp.zeros((batch_size, x_n_elements))
         params = realNVP_haiku_dist.log_prob.init(next(rng), x)
         log_prob = realNVP_haiku_dist.log_prob.apply(params, x)
@@ -26,7 +28,7 @@ class UnitTests(absltest.TestCase):
         samples, log_probs = realNVP_haiku_dist.sample_and_log_prob.apply(params, key,
                                                           sample_shape=(batch_size,))
         log_prob_check = realNVP_haiku_dist.log_prob.apply(params, samples)
-        chex.assert_equal(log_probs, log_prob_check)
+        assert (log_probs == log_prob_check).all()
         key1 = next(rng)
         print(key1)
         samples_, _ = realNVP_haiku_dist.sample_and_log_prob.apply(params, key1,
