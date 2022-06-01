@@ -99,7 +99,7 @@ class AgentFAB:
             @jax.jit
             def sampler(rng_key):
                 # get samples to init buffer
-                x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+                _, _, x_ais, log_w_ais, transition_operator_state, \
                 ais_info = self.forward(batch_size, state, rng_key)
                 return x_ais, log_w_ais
             buffer_state = self.replay_buffer.init(subkey2, sampler)

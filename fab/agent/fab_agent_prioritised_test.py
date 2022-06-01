@@ -56,17 +56,17 @@ class Test_AgentFAB(absltest.TestCase):
                                            mlp_hidden_size_per_x_dim=mlp_hidden_size_per_x_dim,
                                            act_norm=False,
                                            layer_norm=False,
-                                           lu_layer=True)
+                                           lu_layer=False)
     target = ManyWellEnergy(dim=dim)
     evaluator = setup_manywell_evaluator(target, real_nvp_flo)
     target_log_prob = target.log_prob
     log_prob_2D = target.log_prob_2D
     batch_size = 64
-    n_iter = int(5e3)
+    n_iter = int(1e3)
     loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
     style = "vanilla"  # "vanilla"  "proptoloss"
     n_intermediate_distributions: int = 4
-    max_grad_norm = None # 10.0
+    max_grad_norm = 10.0
     lr = 1e-4
     n_plots = 10
     n_evals = 4

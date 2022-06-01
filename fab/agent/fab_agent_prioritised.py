@@ -89,9 +89,11 @@ class PrioritisedAgentFAB:
         @jax.jit
         def sampler(rng_key):
             # get samples to init buffer
-            x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+            _, _, x_ais, log_w_ais, transition_operator_state, \
             ais_info = self.forward(batch_size, state, rng_key)
-            return x_ais, log_w_ais, log_q_x_base
+            log_q_x_ais = self.learnt_distribution.log_prob.apply(
+                learnt_distribution_params, x_ais)
+            return x_ais, log_w_ais, log_q_x_ais
         buffer_state = self.replay_buffer.init(subkey2, sampler)
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       transition_operator_state=transition_operator_state,
@@ -144,7 +146,8 @@ class PrioritisedAgentFAB:
              learnt_distribution_params: chex.ArrayTree) -> \
             Tuple[chex.Array, Dict]:
         log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
-        w_adjust = jnp.exp(log_q_old - jax.lax.stop_gradient(log_q))
+        log_w_adjust = log_q_old - jax.lax.stop_gradient(log_q)
+        w_adjust = jnp.exp(log_w_adjust)
         loss = -jnp.mean(jnp.clip(w_adjust, a_max=self.max_w_adjust) * log_q)
         info = {"w_adjust_mean": jnp.mean(w_adjust),
                 "w_adjust_min": jnp.min(w_adjust),
@@ -174,11 +177,13 @@ class PrioritisedAgentFAB:
         info = {}
         # perform ais forward pass
         key, subkey1, subkey2, buffer_key = jax.random.split(state.key, 4)
-        x_base, log_q_x_base, x_ais, log_w_ais, transition_operator_state, \
+        _, _, x_ais, log_w_ais, transition_operator_state, \
         ais_info = self.forward(batch_size, state, subkey1)
+        log_q_x_ais = self.learnt_distribution.log_prob.apply(state.learnt_distribution_params,
+                                                              x_ais)
         info.update(ais_info)
 
-        buffer_state = self.replay_buffer.add(x_ais, log_w_ais, log_q_x_base, state.buffer_state)
+        buffer_state = self.replay_buffer.add(x_ais, log_w_ais, log_q_x_ais, state.buffer_state)
 
         # now do replay sampling
         buffer_key, subkey = jax.random.split(buffer_key)
@@ -207,6 +212,27 @@ class PrioritisedAgentFAB:
             xs=minibatches
         )
         info.update(jax.tree_map(jnp.mean, sgd_step_info))
+
+
+        # learnt_distribution_params = state.learnt_distribution_params
+        # opt_state = state.optimizer_state
+        # for i in range(self.n_buffer_updates_per_forward):
+        #     x, log_w, log_q_old, indices = [minibatches[j][i] for j in range(4)]
+        #     learnt_distribution_params, opt_state, info = self.sgd_step(x, log_q_old,
+        #                                                                 learnt_distribution_params,
+        #                                                                 opt_state)
+        #     info.update(sampled_log_w_std=jnp.std(log_w),
+        #                 sampled_log_w_mean=jnp.mean(log_w)
+        #                 )
+        #
+        # """Adjust weights on minibatch according to new flow params."""
+        # for i in range(self.n_buffer_updates_per_forward):
+        #     x, log_w, log_q_old, indices = [minibatches[j][i] for j in range(4)]
+        #     log_q = self.learnt_distribution.log_prob.apply(learnt_distribution_params, x)
+        #     log_w_adjust = log_q_old - log_q
+        #     buffer_state = self.replay_buffer.adjust(log_w_adjustment=log_w_adjust,
+        #                                              log_q=log_q, indices=indices, buffer_state=
+        #                                              buffer_state)
 
         # adjust weights in the buffer
         def scan_w_adjust_fn(carry, xs):
