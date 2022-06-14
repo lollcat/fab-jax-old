@@ -10,8 +10,8 @@ pip install git+https://github.com/lollcat/fab-jax.git
 ```
 
 ## Examples
-**Double Well Boltzmann distribution samples vs contours** (see [notebook](examples/double_well.ipynb))
-![Double Well samples vs contours](./examples/images/double_well.png)
+**Double Well Boltzmann distribution samples vs contours** (see [notebook](examples_fabjax/double_well.ipynb))
+![Double Well samples vs contours](examples_fabjax/images/double_well.png)
 
-**Gaussian Mixture Model samples vs contours** (see [notebook](examples/gmm.ipynb))
-![Gaussian Mixture Model samples vs contours](./examples/images/gmm.png)
+**Gaussian Mixture Model samples vs contours** (see [notebook](examples_fabjax/gmm.ipynb))
+![Gaussian Mixture Model samples vs contours](examples_fabjax/images/gmm.png)
