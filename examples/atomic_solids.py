@@ -1,23 +1,31 @@
 from functools import partial
 
-import chex
 import distrax
-import optax
 import tensorflow_probability.substrates.jax as tfp
 import numpy as np
-import matplotlib.pyplot as plt
 
 from flows_for_atomic_solids.experiments.train import _num_particles
 from flows_for_atomic_solids.experiments import lennard_jones_config
 from flows_for_atomic_solids.experiments import monatomic_water_config
-from flows_for_atomic_solids.experiments import utils
-from flows_for_atomic_solids.utils import observable_utils as obs_utils
 
 
-from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
-from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 from fab.learnt_distributions.model_to_haiku_dist import model_to_haiku_dist
 from fab.utils.plotting import plot_history
+
+import os
+import pathlib
+import chex
+import hydra
+import wandb
+from omegaconf import DictConfig
+from datetime import datetime
+import jax
+import optax
+import matplotlib.pyplot as plt
+
+from fab.utils.logging import PandasLogger, WandbLogger, Logger, ListLogger
+from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
+from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
 SYSTEMS = ['mw_cubic_8', 'mw_cubic_64', 'mw_cubic_216', 'mw_cubic_512',
                    'mw_hex_64', 'mw_hex_216', 'mw_hex_512',
@@ -25,7 +33,29 @@ SYSTEMS = ['mw_cubic_8', 'mw_cubic_64', 'mw_cubic_216', 'mw_cubic_512',
                    ]
 
 
-def create_model(state) -> distrax.Distribution:
+def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
+    if hasattr(cfg.logger, "pandas_logger"):
+        logger = PandasLogger(save=True,
+                              save_path=save_path + "logging_hist.csv",
+                              save_period=cfg.logger.pandas_logger.save_period)
+    elif hasattr(cfg.logger, "wandb"):
+        logger = WandbLogger(**cfg.logger.wandb, config=dict(cfg))
+    elif hasattr(cfg.logger, "list_logger"):
+        logger = ListLogger(save=False)
+    else:
+        raise Exception("No logger specified, try adding the wandb or "
+                        "pandas logger to the config file.")
+    return logger
+
+
+def create_model(config, cfg: DictConfig) -> distrax.Distribution:
+    state = config.state
+    # overwrite bijector params (e.g. make it smaller)
+    config.model["kwargs"]["bijector"]["kwargs"].update(num_bins=cfg.flow.num_bins,
+                                                        num_layers=cfg.flow.num_layers)
+    config.model["kwargs"]["bijector"]["kwargs"]["conditioner"]["kwargs"].update(
+        embedding_size=cfg.flow.embedding_size)
+
     model = config.model['constructor'](
         num_particles=state.num_particles,
         lower=state.lower,
@@ -37,19 +67,25 @@ def create_model(state) -> distrax.Distribution:
     model = distrax.Transformed(model, reshape_bijector)
     return model
 
-if __name__ == '__main__':
+
+def _run(cfg: DictConfig):
+    if cfg.training.use_64_bit:
+        jax.config.update("jax_enable_x64", True)
+    current_time = datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%p")
+    save_path = cfg.evaluation.save_path + current_time + "/"
+    if not hasattr(cfg.logger, "wandb"):
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=False)
+    logger = setup_logger(cfg, save_path)
+    if hasattr(cfg.logger, "wandb"):
+        # if using wandb then save to wandb path
+        save_path = os.path.join(wandb.run.dir, save_path)
+        pathlib.Path(save_path).mkdir(parents=True, exist_ok=False)
+    with open(save_path + "config.txt", "w") as file:
+        file.write(str(cfg))
+
+
     system = 'mw_cubic_8'  # SYSTEMS[0]
-    batch_size = 2
-    n_iter = int(1e3)
-    loss_type = "alpha_2_div"  # "forward_kl"  "alpha_2_div"
-    style = "vanilla"  # "vanilla"  "proptoloss"
-    n_intermediate_distributions: int = 1
-    max_grad_norm = 10.0
-    lr = 1e-4
-    n_plots = 10
-    n_evals = 4
-    n_buffer_updates_per_forward = 8
-    eval_batch_size = batch_size
+
 
     if system.startswith('lj'):
         config = lennard_jones_config.get_config(_num_particles(system))
@@ -76,32 +112,56 @@ if __name__ == '__main__':
         return energy_fn_train(x)
 
     dim = int(np.prod(event_shape_before_reshape))
-    flow = model_to_haiku_dist(partial(create_model, config.state), dim)
+    flow = model_to_haiku_dist(partial(create_model, config, cfg), dim)
 
-    optimizer = optax.adam(1e-4)
+    optimizer = optax.adam(cfg.training.lr)
 
     AIS_kwargs = {"transition_operator_type": "hmc_tfp",
                   "additional_transition_operator_kwargs":
                       {"init_step_size": 0.2}}
 
+    buffer = PrioritisedReplayBuffer(
+        dim=dim,
+        max_length=cfg.buffer.maximum_buffer_length,
+        min_sample_length=cfg.buffer.min_buffer_length)
 
-    buffer = PrioritisedReplayBuffer(dim=dim,
-                                     max_length=batch_size * n_buffer_updates_per_forward*10,
-                                     min_sample_length=batch_size * n_buffer_updates_per_forward)
+    agent = PrioritisedAgentFAB(learnt_distribution=flow,
+                                target_log_prob=energy_fn,
+                                n_intermediate_distributions=cfg.fab.n_intermediate_distributions,
+                                replay_buffer=buffer,
+                                max_w_adjust=cfg.buffer.max_w_adjust,
+                                n_buffer_updates_per_forward=cfg.buffer.n_batches_buffer_sampling,
+                                AIS_kwargs=AIS_kwargs,
+                                seed=cfg.training.seed,
+                                optimizer=optimizer,
+                                plotter=None,
+                                logger=logger,
+                                evaluator=None)
 
-    fab_agent = PrioritisedAgentFAB(learnt_distribution=flow,
-                                    target_log_prob=energy_fn,
-                                    n_intermediate_distributions=n_intermediate_distributions,
-                                    replay_buffer=buffer,
-                                    n_buffer_updates_per_forward=n_buffer_updates_per_forward,
-                                    AIS_kwargs=AIS_kwargs,
-                                    optimizer=optimizer,
-                                    max_w_adjust=10.0,
-                                    )
+    # now we can run the agent
+    agent.run(n_iter=cfg.training.n_iterations,
+              batch_size=cfg.training.batch_size,
+              eval_batch_size=cfg.evaluation.batch_size,
+              n_evals=cfg.evaluation.n_evals,
+              n_plots=cfg.evaluation.n_plots,
+              n_checkpoints=cfg.evaluation.n_checkpoints,
+              save=True,
+              plots_dir=os.path.join(save_path, "plots"),
+              checkpoints_dir=os.path.join(save_path, "checkpoints"))
+    if hasattr(cfg.logger, "list_logger"):
+        plot_history(agent.logger.history)
+        plt.show()
 
-    fab_agent.run(n_iter=n_iter, batch_size=batch_size, save=False)
-    plot_history(fab_agent.logger.history)
-    plt.show()
+
+@hydra.main(config_path="./config", config_name="atomic_solids.yaml")
+def run(cfg: DictConfig):
+    _run(cfg)
+
+
+if __name__ == '__main__':
+    run()
+
+
 
 
 
