@@ -1,0 +1,2 @@
+from fabjax.target_distributions.many_well import ManyWellEnergy
+from fabjax.target_distributions.gmm import GMM

@@ -4,11 +4,11 @@ import tensorflow_datasets as tfds
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from fab.utils.logging import to_numpy
-from fab.utils.plotting import plot_history
+from fabjax.utils.logging import to_numpy
+from fabjax.utils.plotting import plot_history
 
 from fab_vae.utils.data import load_dataset
-from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from fab_vae.models.encoder_only import VAE_encoder
 
 

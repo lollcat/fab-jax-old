@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 import tensorflow_probability.substrates.jax as tfp
 
-from fab.types import LogProbs, HaikuDistribution
-from fab.utils.networks import LayerNormMLP
+from fabjax.types import LogProbs, HaikuDistribution
+from fabjax.utils.networks import LayerNormMLP
 
 
 

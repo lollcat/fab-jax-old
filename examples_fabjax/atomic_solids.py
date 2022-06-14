@@ -9,8 +9,8 @@ from flows_for_atomic_solids.experiments import lennard_jones_config
 from flows_for_atomic_solids.experiments import monatomic_water_config
 
 
-from fab.learnt_distributions.model_to_haiku_dist import model_to_haiku_dist
-from fab.utils.plotting import plot_history
+from fabjax.learnt_distributions.model_to_haiku_dist import model_to_haiku_dist
+from fabjax.utils.plotting import plot_history
 
 import os
 import pathlib
@@ -23,9 +23,9 @@ import jax
 import optax
 import matplotlib.pyplot as plt
 
-from fab.utils.logging import PandasLogger, WandbLogger, Logger, ListLogger
-from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
-from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
+from fabjax.utils.logging import PandasLogger, WandbLogger, Logger, ListLogger
+from fabjax.agent.fab_agent_prioritised import PrioritisedAgentFAB
+from fabjax.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
 SYSTEMS = ['mw_cubic_8', 'mw_cubic_64', 'mw_cubic_216', 'mw_cubic_512',
                    'mw_hex_64', 'mw_hex_216', 'mw_hex_512',

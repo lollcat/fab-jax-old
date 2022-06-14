@@ -13,15 +13,15 @@ import jax
 import optax
 import matplotlib.pyplot as plt
 
-from fab.utils.logging import PandasLogger, WandbLogger, Logger
-from fab.types import HaikuDistribution
-from fab.utils.plotting import plot_marginal_pair, plot_contours_2D
-from fab.agent.fab_agent import AgentFAB, Evaluator, State
-from fab.agent.fab_agent_prioritised import PrioritisedAgentFAB
-from fab.target_distributions.many_well import ManyWellEnergy, setup_manywell_evaluator
-from fab.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP, HMCState
-from fab.utils.replay_buffer import ReplayBuffer
-from fab.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
+from fabjax.utils.logging import PandasLogger, WandbLogger, Logger
+from fabjax.types import HaikuDistribution
+from fabjax.utils.plotting import plot_marginal_pair, plot_contours_2D
+from fabjax.agent.fab_agent import AgentFAB, Evaluator, State
+from fabjax.agent.fab_agent_prioritised import PrioritisedAgentFAB
+from fabjax.target_distributions.many_well import ManyWellEnergy, setup_manywell_evaluator
+from fabjax.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP, HMCState
+from fabjax.utils.replay_buffer import ReplayBuffer
+from fabjax.utils.prioritised_replay_buffer import PrioritisedReplayBuffer
 
 
 def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
@@ -39,7 +39,7 @@ def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
 
 def setup_flow(cfg: DictConfig) -> HaikuDistribution:
     assert cfg.flow.type == "rnvp"
-    from fab.learnt_distributions.real_nvp import make_realnvp_dist_funcs
+    from fabjax.learnt_distributions.real_nvp import make_realnvp_dist_funcs
     flow = make_realnvp_dist_funcs(
         x_ndim=cfg.target.dim,
         flow_num_layers=cfg.flow.n_layers,

@@ -12,15 +12,15 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 
-from fab.utils.logging import ListLogger, to_numpy, Logger
-from fab.utils.plotting import plot_history
+from fabjax.utils.logging import ListLogger, to_numpy, Logger
+from fabjax.utils.plotting import plot_history
 
 from fab_vae.models.fab_types import Params, Info, State, AISOutput
 from fab_vae.utils.data import load_dataset, Batch, MNIST_IMAGE_SHAPE
 from fab_vae.models.networks import make_vae_networks
 from fab_vae.utils.numerical import remove_inf_and_nan
-from fab.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
-from fab.utils.plotting import plot_contours_2D
+from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from fabjax.utils.plotting import plot_contours_2D
 
 Plotter = Callable[[State], Sequence[plt.Figure]]
 

@@ -18,11 +18,11 @@ with open(path.join(here, 'requirements.txt'), encoding='utf-8') as f:
 install_requires = [x.strip() for x in all_reqs]
 
 setup(
-    name='fab',
+    name='fabjax',
     version=__version__,
     description='JAX implementation of Flow Annealed importance sampling Bootstrap (FAB)',
     long_description=long_description,
-    url='https://github.com/lollcat/FAB-JAX',
+    url='https://github.com/lollcat/fab-jax',
     download_url='https://github.com/lollcat/FAB-JAX/tarball/' + __version__,
     license='MIT',
     classifiers=[
@@ -33,7 +33,7 @@ setup(
     keywords='',
     packages=find_packages(exclude=['docs', 'tests*']),
     include_package_data=True,
-    author=['Laurence Midgley'],
+    author=['Laurence Midgley', 'Vincent Stimper'],
     install_requires=install_requires,
     author_email=''
 )

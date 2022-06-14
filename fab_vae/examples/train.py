@@ -5,7 +5,7 @@ from datetime import datetime
 import pathlib
 import os
 
-from fab.utils.logging import PandasLogger, WandbLogger, Logger
+from fabjax.utils.logging import PandasLogger, WandbLogger, Logger
 from fab_vae.models.vae import VAE
 
 
