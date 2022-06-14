@@ -1,6 +1,6 @@
 # see https://github.com/deepmind/distrax/blob/master/examples/flow.py
 
-from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple, Union
+from typing import Sequence, Tuple
 
 import jax.nn
 
@@ -14,6 +14,7 @@ import tensorflow_probability.substrates.jax as tfp
 from fab.types import XPoints, LogProbs, HaikuDistribution
 from fab.utils.networks import LayerNormMLP
 from fab.learnt_distributions.act_norm import ActNormBijector
+from fab.learnt_distributions.model_to_haiku_dist import model_to_haiku_dist
 
 
 
@@ -46,42 +47,7 @@ def make_realnvp_dist_funcs(
                 lu_layer=lu_layer
         )
 
-        @hk.without_apply_rng
-        @hk.transform
-        def log_prob(data: XPoints) -> LogProbs:
-            model = get_model()
-            return model.log_prob(data)
-
-        @hk.without_apply_rng
-        @hk.transform
-        def base_z_log_prob_and_log_det(data: XPoints) -> Tuple[chex.Array, LogProbs, LogProbs]:
-            model = get_model()
-            z, log_det = model.bijector.inverse_and_log_det(data)
-            log_prob_base = model.distribution.log_prob(z)
-            return z, log_prob_base, log_det
-
-        @hk.without_apply_rng
-        @hk.transform
-        def log_det_forward(z: chex.Array) -> Tuple[XPoints, chex.Array]:
-            model = get_model()
-            x, log_det = model.bijector.forward_and_log_det(z)
-            return x, log_det
-
-
-        @hk.transform
-        def sample_and_log_prob(sample_shape: Tuple = ()) \
-                -> Tuple[XPoints, LogProbs]:
-            model = get_model()
-            return model.sample_and_log_prob(seed=hk.next_rng_key(), sample_shape=sample_shape)
-
-
-        @hk.transform
-        def sample(sample_shape: Tuple = ()) -> XPoints:
-            model = get_model()
-            return model.sample(seed=hk.next_rng_key(), sample_shape=sample_shape)
-
-        return HaikuDistribution(x_ndim, log_prob, sample_and_log_prob, sample,
-                                 base_z_log_prob_and_log_det, log_det_forward)
+        return model_to_haiku_dist(get_model, x_ndim)
 
 
 

@@ -1,3 +1,4 @@
 *.idea/
 *__pycache__/
 /fab_vae/models_old/
+flows_for_atomic_solids
