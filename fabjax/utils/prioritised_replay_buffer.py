@@ -71,11 +71,18 @@ class PrioritisedReplayBuffer:
 
         buffer_state = PrioritisedBufferState(data=data, is_full=is_full, can_sample=can_sample,
                                               current_index=current_index)
-        while not buffer_state.can_sample:
-            # fill buffer up minimum length
+
+        def body_func(val):
+            key, buffer_state = val
             key, subkey = jax.random.split(key)
             x, log_w, log_q_old = initial_sampler(subkey)
             buffer_state = self.add(x, log_w, log_q_old, buffer_state)
+            return key, buffer_state
+
+        _, buffer_state = jax.lax.while_loop(lambda x: ~x[1].can_sample,
+                                          body_func,
+                                          (key, buffer_state))
+
         return buffer_state
 
 
