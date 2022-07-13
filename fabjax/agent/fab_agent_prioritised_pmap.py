@@ -70,6 +70,7 @@ class PrioritisedAgentFAB:
 
         self.pmap_axis_name = "data"
         self.devices = jax.devices()
+        print(f"\n***************** Running on devices: {self.devices} *********************\n")
         self.n_devices = len(self.devices)
         self.state = self.init_state(seed)
         self.pmapped_step = jax.pmap(self.step, static_broadcasted_argnums=0,
@@ -326,6 +327,7 @@ class PrioritisedAgentFAB:
         pbar = tqdm(range(n_iter))
         for i in pbar:
             self.state, info = self.pmapped_step(batch_size, self.state)
+            info = get_from_first_device(info)
 
             if i % logging_freq == 0:
                 info = to_numpy(info)

@@ -34,7 +34,7 @@ training:
   optimizer_type: adam # adabelief, adam
   max_grad_norm: 5.0
   max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow
-  batch_size: 32
+  batch_size: 16
   n_iterations: 2_000
   use_64_bit: true
 
@@ -49,8 +49,10 @@ evaluation:
 
 
 logger:
-  pandas_logger:
-    save_period: 100 # how often to save the pandas dataframe as a csv
-#  wandb:
-#    name: ManyWell32
-#    tags: [alpha_2_loss,ManyWell32]
+#  pandas_logger:
+#    save_period: 100 # how often to save the pandas dataframe as a csv
+  wandb:
+    name: ManyWell32
+    project: fab
+    entity: flow-ais-bootstrap
+    tags: [alpha_2_loss,ManyWell32]

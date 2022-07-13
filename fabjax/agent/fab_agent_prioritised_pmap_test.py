@@ -1,5 +1,7 @@
 import jax.random
 from absl.testing import absltest
+import chex
+chex.set_n_cpu_devices(2)
 import optax
 import matplotlib.pyplot as plt
 from functools import partial
