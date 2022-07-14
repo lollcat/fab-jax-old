@@ -94,7 +94,7 @@ class PrioritisedAgentFAB:
                           buffer_state=None)
             # init prioritised replay state
 
-            @jax.jit
+
             def sampler(rng_key):
                 # get samples to init buffer
                 _, _, x_ais, log_w_ais, transition_operator_state, \
