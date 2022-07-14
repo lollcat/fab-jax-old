@@ -1,15 +1,15 @@
 target:
-  dim: 8
+  dim: 32
   name: many_well
 
 flow:
   type: rnvp
   layer_nodes_per_dim: 5
-  n_layers: 5
+  n_layers: 10
   use_exp: false  # otherwise use softplus
   layer_norm: false
   act_norm: true
-  lu_layer: true
+  lu_layer: false
 
 fab:
   loss_type: alpha_2_div
@@ -22,28 +22,28 @@ fab:
 buffer:
   use: true
   prioritised: true
-  max_w_adjust: 10.0 # for prioritised replay
-  n_batches_buffer_sampling: 2
-  maximum_buffer_length: 1000
-  min_buffer_length: 100
+  max_w_adjust: 100.0 # for prioritised replay
+  n_batches_buffer_sampling: 4
+  maximum_buffer_length: 100000
+  min_buffer_length: 1000
 
 
 training:
   seed: 0
-  lr: 2e-4
+  lr: 1e-4
   optimizer_type: adam # adabelief, adam
-  max_grad_norm: 5.0
+  max_grad_norm: 100.0
   max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow
-  batch_size: 16
+  batch_size: 512
   n_iterations: 2_000
-  use_64_bit: true
+  use_64_bit: false
 
 
 
 evaluation:
-  n_plots: 4 # number of times we visualise the model throughout training.
-  n_evals: 4 # for calculating metrics of flow w.r.t target.
-  batch_size: 320 # must be a multiple of inner batch size
+  n_plots: 10 # number of times we visualise the model throughout training.
+  n_evals: 10 # for calculating metrics of flow w.r.t target.
+  batch_size: 5120 # must be a multiple of inner batch size
   n_checkpoints: null # number of model checkpoints saved
   save_path:  results/many_well32/
 
@@ -52,7 +52,7 @@ logger:
 #  pandas_logger:
 #    save_period: 100 # how often to save the pandas dataframe as a csv
   wandb:
-    name: ManyWell32
+    name: ManyWell32_TPU
     project: fab
     entity: flow-ais-bootstrap
     tags: [alpha_2_loss,ManyWell32]

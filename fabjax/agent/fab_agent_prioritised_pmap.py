@@ -8,7 +8,7 @@ import numpy as np
 import jax
 import optax
 import pickle
-import os
+
 from tqdm import tqdm
 import pathlib
 import matplotlib.pyplot as plt
@@ -179,6 +179,7 @@ class PrioritisedAgentFAB:
         (loss, info), grads = jax.value_and_grad(
             self.loss, argnums=2, has_aux=True)(
             x, log_q_old, learnt_distribution_params)
+        grads = jax.lax.pmean(grads, axis_name=self.pmap_axis_name)
         updates, opt_state = self.optimizer.update(grads, opt_state,
                                                        params=learnt_distribution_params)
         learnt_distribution_params = optax.apply_updates(learnt_distribution_params, updates)
