@@ -1,5 +1,6 @@
 target:
   name: atomic_solids
+  system: mw_cubic_8
 
 flow:
     num_bins: 2

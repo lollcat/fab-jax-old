@@ -1,5 +1,7 @@
 from typing import Optional, Callable, NamedTuple, Tuple, Dict, Any, Iterable, Union
 
+import os
+
 import chex
 import jax.numpy as jnp
 import haiku as hk
