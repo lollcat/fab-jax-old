@@ -3,6 +3,7 @@ target:
   system: mw_cubic_8
 
 flow:
+    use_default_params: true
     num_bins: 5
     num_layers: 3
     embedding_size: 8
@@ -22,7 +23,7 @@ buffer:
 
 training:
   seed: 0
-  lr: 2e-4
+  lr: 1e-4
   optimizer_type: adam # adabelief, adam
   max_grad_norm: 5.0
   max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow

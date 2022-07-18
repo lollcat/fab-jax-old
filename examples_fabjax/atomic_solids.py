@@ -50,12 +50,12 @@ def setup_logger(cfg: DictConfig, save_path: str) -> Logger:
 
 def create_model(config, cfg: DictConfig) -> distrax.Distribution:
     state = config.state
-    # overwrite bijector params (e.g. make it smaller)
-    config.model["kwargs"]["bijector"]["kwargs"].update(num_bins=cfg.flow.num_bins,
-                                                        num_layers=cfg.flow.num_layers)
-    config.model["kwargs"]["bijector"]["kwargs"]["conditioner"]["kwargs"].update(
-        embedding_size=cfg.flow.embedding_size)
-
+    if not cfg.flow.use_default_params:
+        # Overwrite params from atomic solids paper.
+        config.model["kwargs"]["bijector"]["kwargs"].update(num_bins=cfg.flow.num_bins,
+                                                            num_layers=cfg.flow.num_layers)
+        config.model["kwargs"]["bijector"]["kwargs"]["conditioner"]["kwargs"].update(
+            embedding_size=cfg.flow.embedding_size)
     model = config.model['constructor'](
         num_particles=state.num_particles,
         lower=state.lower,

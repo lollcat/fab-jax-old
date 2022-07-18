@@ -7,6 +7,8 @@ from fabjax.types import XPoints, LogProbs, HaikuDistribution
 GetModelFn = Callable[[], distrax.Distribution]
 
 def model_to_haiku_dist(get_model_fn: GetModelFn, x_dim) -> HaikuDistribution:
+    """Convert model from the atomic solids paper into the HaikuDistribution object this
+    repo has been using."""
 
     @hk.without_apply_rng
     @hk.transform

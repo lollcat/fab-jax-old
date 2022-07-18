@@ -13,6 +13,7 @@ dm-acme
 wandb
 tqdm
 pandas
+jax-md
 matplotlib
 jupyterlab
 hydra-core
