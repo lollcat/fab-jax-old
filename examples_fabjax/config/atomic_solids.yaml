@@ -3,21 +3,21 @@ target:
   system: mw_cubic_8
 
 flow:
-    num_bins: 2
-    num_layers: 2
-    embedding_size: 2
+    num_bins: 5
+    num_layers: 3
+    embedding_size: 8
 
 fab:
-  n_intermediate_distributions: 1
+  n_intermediate_distributions: 3
 
 
 buffer:
   use: true
   prioritised: true
-  max_w_adjust: 10.0 # for prioritised replay
-  n_batches_buffer_sampling: 2
-  maximum_buffer_length: 1000
-  min_buffer_length: 4
+  max_w_adjust: 100.0 # for prioritised replay
+  n_batches_buffer_sampling: 4
+  maximum_buffer_length: 51200
+  min_buffer_length: 5120
 
 
 training:
@@ -26,16 +26,16 @@ training:
   optimizer_type: adam # adabelief, adam
   max_grad_norm: 5.0
   max_grad: 100.0 # if not used can cause a weird effect where grad norm clipping causes underflow
-  batch_size: 2
-  n_iterations: 100
+  batch_size: 128
+  n_iterations: 1_000
   use_64_bit: false
 
 
 
 evaluation:
   n_plots: null # number of times we visualise the model throughout training.
-  n_evals: 2 # for calculating metrics of flow w.r.t target.
-  batch_size: 2 # must be a multiple of inner batch size
+  n_evals: 10 # for calculating metrics of flow w.r.t target.
+  batch_size: 128 # must be a multiple of inner batch size
   n_checkpoints: null # number of model checkpoints saved
   save_path:  results/atomic_solids/
 
@@ -45,6 +45,8 @@ logger:
     use: true
 #  pandas_logger:
 #    save_period: 100 # how often to save the pandas dataframe as a csv
-#  wandb:
-#    name: ManyWell32
-#    tags: [alpha_2_loss,ManyWell32]
+  wandb:
+    name: ${target.system}_TPU
+    project: fab
+    entity: flow-ais-bootstrap
+    tags: [alpha_2_loss,atomic_solids]
