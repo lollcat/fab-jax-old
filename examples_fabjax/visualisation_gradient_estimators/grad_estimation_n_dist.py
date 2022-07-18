@@ -21,13 +21,13 @@ from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples
 
 
 if __name__ == '__main__':
-    mpl.rcParams['figure.dpi'] = 300
-    rc('font', **{'family': 'serif', 'serif': ['Times']})
-    rc('text', usetex=True)
-    rc('axes', titlesize=15, labelsize=15)  # fontsize of the axes title and labels
-    rc('legend', fontsize=15)
-    rc('xtick', labelsize=12)
-    rc('ytick', labelsize=12)
+    # mpl.rcParams['figure.dpi'] = 300
+    # rc('font', **{'family': 'serif', 'serif': ['Times']})
+    # rc('text', usetex=True)
+    # rc('axes', titlesize=15, labelsize=15)  # fontsize of the axes title and labels
+    # rc('legend', fontsize=15)
+    # rc('xtick', labelsize=12)
+    # rc('ytick', labelsize=12)
 
 
     grad_ais_hist_p2_over_q = []
@@ -97,11 +97,11 @@ if __name__ == '__main__':
              ax=ax, c="black", label="IS with p", linestyle="dotted", log_scale=False)
     plot_snr(n_ais_dists, jnp.repeat(grad_q[None, ...], len(n_ais_dists), axis=0),
              ax=ax, c="black", label="IS with q", linestyle="dashed", log_scale=False)
-    ax.legend(loc="best", bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
+    ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
     plt.xlabel("Number of intermediate AIS distributions")
     plt.ylim(0)
     plt.ylabel("SNR")
-    plt.savefig("empgrad_SNR_n_dist.png")
+    plt.savefig("empgrad_SNR_n_dist.png", bbox_inches='tight')
     plt.show()
 
 
@@ -113,5 +113,5 @@ if __name__ == '__main__':
     plt.xlabel("x")
     plt.ylabel("PDF")
     plt.legend()
-    plt.savefig("empgrad_PDF.png")
+    plt.savefig("empgrad_PDF.png", bbox_inches='tight')
     plt.show()

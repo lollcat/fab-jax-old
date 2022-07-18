@@ -8,6 +8,14 @@ from functools import partial
 from matplotlib import rc
 import matplotlib as mpl
 
+mpl.rcParams['figure.dpi'] = 300
+rc('font', **{'family': 'serif', 'serif': ['Times']})
+rc('text', usetex=True)
+rc('axes', titlesize=17, labelsize=17)  # fontsize of the axes title and labels
+rc('legend', fontsize=17)
+rc('xtick', labelsize=14)
+rc('ytick', labelsize=14)
+
 # Setup distributions p and q.
 loc = 0.5
 mean_q = loc
@@ -129,13 +137,6 @@ def grad_with_ais_p2_over_q(mean, x_ais, log_w_ais):
 
 
 if __name__ == '__main__':
-    mpl.rcParams['figure.dpi'] = 300
-    rc('font', **{'family': 'serif', 'serif': ['Times']})
-    rc('text', usetex=True)
-    rc('axes', titlesize=15, labelsize=15)  # fontsize of the axes title and labels
-    rc('legend', fontsize=15)
-    rc('xtick', labelsize=12)
-    rc('ytick', labelsize=12)
 
     # Plot p and q.
     x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
@@ -194,7 +195,7 @@ if __name__ == '__main__':
     plot_snr(batch_sizes, grad_ais_p2_over_q_hist, ax=ax, c="r",
              label="AIS with $g=p^2/q$")
     plt.ylabel("SNR")
-    plt.xlabel("n samples")
+    plt.xlabel("Number of samples")
     ax.legend()
     plt.savefig("empgrad_SNR_nsamples.png", bbox_inches='tight')
     plt.show()
