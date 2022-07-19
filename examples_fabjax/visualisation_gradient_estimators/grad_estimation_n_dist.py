@@ -3,12 +3,10 @@ import jax.numpy as jnp
 import distrax
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import rc
-import matplotlib as mpl
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
     ais_get_info, grad_with_ais_p2_over_q, plot, plot_snr, grad_over_p, grad_with_ais_p_target, \
-    grad_over_q, dist_p, loc, AIS_kwargs
+    grad_over_q, dist_p, loc, AIS_kwargs, figsize
 
 
 # loc = 0.25
@@ -90,15 +88,16 @@ if __name__ == '__main__':
     plt.ylabel("gradient w.r.t mean of q")
     plt.show()
 
-    fig, ax = plt.subplots()
-    plot_snr(n_ais_dists, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p", log_scale=False)
-    plot_snr(n_ais_dists, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
+    fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_ais_dists, jnp.repeat(grad_p[None, ...], len(n_ais_dists), axis=0),
              ax=ax, c="black", label="IS with p", linestyle="dotted", log_scale=False)
     plot_snr(n_ais_dists, jnp.repeat(grad_q[None, ...], len(n_ais_dists), axis=0),
              ax=ax, c="black", label="IS with q", linestyle="dashed", log_scale=False)
-    ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
-    plt.xlabel("Number of intermediate AIS distributions")
+    plot_snr(n_ais_dists, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p", log_scale=False)
+    plot_snr(n_ais_dists, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
+
+    # ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
+    plt.xlabel("Number of AIS distributions")
     plt.ylim(0)
     plt.ylabel("SNR")
     plt.savefig("empgrad_SNR_n_dist.png", bbox_inches='tight')
@@ -106,6 +105,7 @@ if __name__ == '__main__':
 
 
     # Plot p and q.
+    plt.figure(figsize=figsize)
     x = jnp.linspace(-4, 4, 50)[:, None]
     dist_q = distrax.Independent(distrax.Normal(loc=[loc], scale=1), reinterpreted_batch_ndims=1)
     plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
