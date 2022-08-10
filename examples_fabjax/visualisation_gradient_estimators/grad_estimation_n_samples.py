@@ -21,11 +21,11 @@ figsize = (figsize, figsize+1.0)
 
 # Setup distributions p and q.
 loc = 0.5
-mean_q = loc
+mean_q = jnp.array([loc])
 key = jax.random.PRNGKey(0)
 batch_sizes = [100, 1000, 10000]
-dist_q = distrax.Independent(distrax.Normal(loc=[loc], scale=1), reinterpreted_batch_ndims=1)
-dist_p = distrax.Independent(distrax.Normal(loc=[-loc], scale=1), reinterpreted_batch_ndims=1)
+# dist_q = distrax.Independent(distrax.Normal(loc=[loc], scale=1), reinterpreted_batch_ndims=1)
+# dist_p = distrax.Independent(distrax.Normal(loc=[-loc], scale=1), reinterpreted_batch_ndims=1)
 
 # Setup AIS.
 n_ais_dist = 3
@@ -46,12 +46,21 @@ ais = AnnealedImportanceSampler(
 transition_operator_state = ais.transition_operator_manager.get_init_state()
 
 
+def get_dist(mean_q):
+    n_dim = mean_q.shape[0]
+    dist_p = distrax.MultivariateNormalDiag(loc=jnp.array([-loc] + [0.0] * (n_dim - 1)),
+                                            scale_diag=jnp.ones(n_dim))
+    dist_q = distrax.MultivariateNormalDiag(loc=mean_q,
+                                            scale_diag=jnp.ones(n_dim))
+    return dist_q, dist_p
+
+
 # Setup gradient estimators.
 
 def loss_over_p(mean_q, batch_size, key, vanilla_form=True):
     """Added vanilla_form=False option to check that it doesn't give different results
     (plots look the same)."""
-    dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
+    dist_q, dist_p = get_dist(mean_q)
     x, log_p = dist_p.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_q = dist_q.log_prob(x)
     log_w = log_p - log_q
@@ -65,7 +74,7 @@ def loss_over_p(mean_q, batch_size, key, vanilla_form=True):
 def loss_over_q(mean_q, batch_size, key, vanilla=True):
     """Added vanilla_form=False option to check that it doesn't give different results
     (plots look the same)."""
-    dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
+    dist_q, dist_p = get_dist(mean_q)
     x, log_q = dist_q.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_p = dist_p.log_prob(x)
     log_w = log_p - log_q
@@ -76,11 +85,11 @@ def loss_over_q(mean_q, batch_size, key, vanilla=True):
         return - jnp.mean(jax.lax.stop_gradient(w_sq) * log_q)
 
 
-def grad_over_p(mean, batch_size, key):
-    return jax.grad(loss_over_p)(mean, batch_size, key)
+def grad_over_p(mean_q, batch_size, key):
+    return jax.grad(loss_over_p)(mean_q, batch_size, key)
 
-def grad_over_q(mean, batch_size, key):
-    return jax.grad(loss_over_q)(mean, batch_size, key)
+def grad_over_q(mean_q, batch_size, key):
+    return jax.grad(loss_over_q)(mean_q, batch_size, key)
 
 def plot_snr(batch_sizes, loss_hist, ax, c="b", label="", linestyle="-", log_scale=True):
     means = np.array([np.mean(loss_hist[i]) for i in range(len(loss_hist))])
@@ -99,10 +108,9 @@ def plot(batch_sizes, loss_or_grad_hist, ax, c="b", label="", log_scale=False):
 
 
 @partial(jax.jit, static_argnums=(2, 4, 5))
-def ais_forward(mean, key, batch_size, transition_operator_state, p_target, ais):
+def ais_forward(mean_q, key, batch_size, transition_operator_state, p_target, ais):
+    dist_q, dist_p = get_dist(mean_q)
     key1, key2 = jax.random.split(key)
-    # Define event dim for dist q and p for AIS.
-    dist_q = distrax.Independent(distrax.Normal(loc=[mean], scale=1), reinterpreted_batch_ndims=1)
     base_log_prob = dist_q.log_prob
     if p_target:
         target_log_prob = dist_p.log_prob
@@ -134,27 +142,27 @@ def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais
     return log_w_ais, x_ais
 
 
-def grad_with_ais_p_target(mean, x_ais, log_w_ais):
-    log_p_x = dist_p.log_prob(x_ais)
+def grad_with_ais_p_target(mean_q, x_ais, log_w_ais):
     def loss(mean_q):
-        dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
+        dist_q, dist_p = get_dist(mean_q)
+        log_p_x = dist_p.log_prob(x_ais)
         log_q_x = dist_q.log_prob(x_ais)
         f_x = jnp.exp(log_p_x - log_q_x)
         return jnp.sum(jax.nn.softmax(log_w_ais) * f_x)
-    return jax.value_and_grad(loss)(mean)
+    return jax.value_and_grad(loss)(mean_q)
 
 
 def grad_with_ais_p2_over_q(mean, x_ais, log_w_ais):
     def loss(mean_q):
-        dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
+        dist_q, dist_p = get_dist(mean_q)
         log_q_x = dist_q.log_prob(x_ais)
-        f_x =  - log_q_x
+        f_x = - log_q_x
         return jnp.mean(jnp.exp(log_w_ais) * f_x)
     return jax.value_and_grad(loss)(mean)
 
 
 if __name__ == '__main__':
-
+    dist_q, dist_p = get_dist(mean_q)
     # Plot p and q.
     plt.figure(figsize=figsize)
     x = jnp.linspace(-loc*10, loc*10, 50)[:, None]

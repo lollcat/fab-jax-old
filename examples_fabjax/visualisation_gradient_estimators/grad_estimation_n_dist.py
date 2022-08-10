@@ -6,7 +6,7 @@ import numpy as np
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
     ais_get_info, grad_with_ais_p2_over_q, plot, plot_snr, grad_over_p, grad_with_ais_p_target, \
-    grad_over_q, dist_p, loc, AIS_kwargs, figsize
+    grad_over_q, loc, AIS_kwargs, figsize, get_dist
 
 
 # loc = 0.25
@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
     grad_ais_hist_p2_over_q = []
     grad_ais_hist_p = []
-    mean_q = loc
+    mean_q = jnp.array([loc])
     key = jax.random.PRNGKey(0)
     n_ais_dists = [1, 2, 4, 8, 16, 32]
     n_runs = 2000
@@ -104,6 +104,7 @@ if __name__ == '__main__':
     plt.show()
 
 
+    dist_q, dist_p = get_dist(mean_q)
     # Plot p and q.
     plt.figure(figsize=figsize)
     x = jnp.linspace(-4, 4, 50)[:, None]
