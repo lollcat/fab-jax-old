@@ -113,12 +113,23 @@ def _run(cfg: DictConfig):
 
     dim = int(np.prod(event_shape_before_reshape))
     flow = model_to_haiku_dist(partial(create_model, config, cfg), dim)
-
+    # if True:
+        # params = flow.sample.init(jax.random.PRNGKey(0))
+        # x, log_prob = flow.sample_and_log_prob.apply(params, jax.random.PRNGKey(0), (3,))
+        # # data = jax.random.normal(key=jax.random.PRNGKey(0), shape=(2, dim))
+        # # flow.log_prob.apply(params, jnp.zeros(2, dim))
+        # Below code give nan's as samples are outside of the base distribution.
+        # log_prob = flow.log_prob.apply(params, x + jax.random.normal(jax.random.PRNGKey(0),
+        #                                                              x.shape)*1.0)
     optimizer = optax.adam(cfg.training.lr)
 
-    AIS_kwargs = {"transition_operator_type": "hmc_tfp",
+    # AIS_kwargs = {"transition_operator_type": "hmc_tfp",
+    #               "additional_transition_operator_kwargs":
+    #                   {"init_step_size": 0.2}}
+
+    AIS_kwargs = {"transition_operator_type": "metropolis_tfp",
                   "additional_transition_operator_kwargs":
-                      {"init_step_size": 0.2}}
+    {"init_step_size": 0.2}}
 
     buffer = PrioritisedReplayBuffer(
         dim=dim,

@@ -48,18 +48,32 @@ transition_operator_state = ais.transition_operator_manager.get_init_state()
 
 # Setup gradient estimators.
 
-def loss_over_p(mean_q, batch_size, key):
+def loss_over_p(mean_q, batch_size, key, vanilla_form=True):
+    """Added vanilla_form=False option to check that it doesn't give different results
+    (plots look the same)."""
     dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
     x, log_p = dist_p.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_q = dist_q.log_prob(x)
-    return jnp.mean(jnp.exp(log_p - log_q))
+    log_w = log_p - log_q
+    w = jnp.exp(log_w)
+    if vanilla_form:
+        return jnp.mean(w)
+    else:
+        return - jnp.mean(jax.lax.stop_gradient(w) * log_q)
 
 
-def loss_over_q(mean_q, batch_size, key):
+def loss_over_q(mean_q, batch_size, key, vanilla=True):
+    """Added vanilla_form=False option to check that it doesn't give different results
+    (plots look the same)."""
     dist_q = distrax.Independent(distrax.Normal(loc=[mean_q], scale=1), reinterpreted_batch_ndims=1)
     x, log_q = dist_q.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_p = dist_p.log_prob(x)
-    return jnp.mean(jnp.exp(2*log_p - 2*log_q))
+    log_w = log_p - log_q
+    w_sq = jnp.exp(2*(log_w))
+    if vanilla:
+        return jnp.mean(w_sq)
+    else:
+        return - jnp.mean(jax.lax.stop_gradient(w_sq) * log_q)
 
 
 def grad_over_p(mean, batch_size, key):

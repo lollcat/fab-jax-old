@@ -191,7 +191,7 @@ if __name__ == '__main__':
              label="AIS with $g=p^2/q$")
     plt.ylabel("SNR")
     plt.xlabel("Number of samples")
-    plt.ylim(0, 85)
+    plt.ylim(0, 100)
     ax.legend()
     plt.tight_layout()
     plt.savefig("empgrad_SNR_nsamples.png", bbox_inches='tight')

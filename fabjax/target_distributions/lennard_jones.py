@@ -4,7 +4,7 @@ import jax
 
 
 class LennardJones:
-    def __init__(self, n_particles: int, d_space: int, sigma: float = 1.0, epsilon: float = 1.0,):
+    def __init__(self, n_particles: int, d_space: int, sigma: float = 1.0, epsilon: float = 1.0):
         """
         Args:
             n_particles: number of particles in the system

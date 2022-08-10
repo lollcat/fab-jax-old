@@ -68,7 +68,7 @@ class PrioritisedAgentFAB:
         self.batch_size: int
         self.state = self.init_state(seed)
 
-    def init_state(self, seed, batch_size: int = 100) -> State:
+    def init_state(self, seed, batch_size: int = 10) -> State:
         """Initialise the state of the fab agent."""
         key = jax.random.PRNGKey(seed)
         key, subkey1, subkey2 = jax.random.split(key, 3)
@@ -86,7 +86,7 @@ class PrioritisedAgentFAB:
                       buffer_state=None)
         # init prioritised replay state
 
-        @jax.jit
+        # @jax.jit
         def sampler(rng_key):
             # get samples to init buffer
             _, _, x_ais, log_w_ais, transition_operator_state, \
@@ -94,6 +94,9 @@ class PrioritisedAgentFAB:
             log_q_x_ais = self.learnt_distribution.log_prob.apply(
                 learnt_distribution_params, x_ais)
             return x_ais, log_w_ais, log_q_x_ais
+
+        x_ais, log_w_ais, log_q_x_ais = sampler(jax.random.PRNGKey(0))
+        sampler = jax.jit(sampler)
         buffer_state = self.replay_buffer.init(subkey2, sampler)
         state = State(key=key, learnt_distribution_params=learnt_distribution_params,
                       transition_operator_state=transition_operator_state,

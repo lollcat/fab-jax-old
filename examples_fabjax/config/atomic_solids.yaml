@@ -3,13 +3,13 @@ target:
   system: mw_cubic_8
 
 flow:
-    use_default_params: true
-    num_bins: 5
-    num_layers: 3
-    embedding_size: 8
+    use_default_params: false
+    num_bins: 5 # default 16
+    num_layers: 3 # default 26
+    embedding_size: 8 # default 256
 
 fab:
-  n_intermediate_distributions: 3
+  n_intermediate_distributions: 1
 
 
 buffer:
@@ -46,8 +46,8 @@ logger:
     use: true
 #  pandas_logger:
 #    save_period: 100 # how often to save the pandas dataframe as a csv
-  wandb:
-    name: ${target.system}_TPU
-    project: fab
-    entity: flow-ais-bootstrap
-    tags: [alpha_2_loss,atomic_solids]
+#  wandb:
+#    name: ${target.system}_TPU
+#    project: fab
+#    entity: flow-ais-bootstrap
+#    tags: [alpha_2_loss,atomic_solids]
