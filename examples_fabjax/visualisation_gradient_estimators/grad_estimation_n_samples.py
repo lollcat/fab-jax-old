@@ -7,6 +7,7 @@ from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImporta
 from functools import partial
 from matplotlib import rc
 import matplotlib as mpl
+# jax.config.update("jax_enable_x64", True)
 
 mpl.rcParams['figure.dpi'] = 300
 rc('font', **{'family': 'serif', 'serif': ['Times']})
@@ -46,9 +47,12 @@ ais = AnnealedImportanceSampler(
 transition_operator_state = ais.transition_operator_manager.get_init_state()
 
 
-def get_dist(mean_q):
+def get_dist(mean_q, mean_p = None):
+    """If mean_p is None we use a default setting where it is centered on -loc for each dim."""
     n_dim = mean_q.shape[0]
-    dist_p = distrax.MultivariateNormalDiag(loc=jnp.array([-loc] + [0.0] * (n_dim - 1)),
+    if mean_p is None:
+        mean_p = jnp.array([-loc] * n_dim)
+    dist_p = distrax.MultivariateNormalDiag(loc=mean_p,
                                             scale_diag=jnp.ones(n_dim))
     dist_q = distrax.MultivariateNormalDiag(loc=mean_q,
                                             scale_diag=jnp.ones(n_dim))
@@ -57,10 +61,10 @@ def get_dist(mean_q):
 
 # Setup gradient estimators.
 
-def loss_over_p(mean_q, batch_size, key, vanilla_form=True):
+def loss_over_p(mean_q, batch_size, key, mean_p=None, vanilla_form=True):
     """Added vanilla_form=False option to check that it doesn't give different results
     (plots look the same)."""
-    dist_q, dist_p = get_dist(mean_q)
+    dist_q, dist_p = get_dist(mean_q, mean_p)
     x, log_p = dist_p.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_q = dist_q.log_prob(x)
     log_w = log_p - log_q
@@ -71,10 +75,10 @@ def loss_over_p(mean_q, batch_size, key, vanilla_form=True):
         return - jnp.mean(jax.lax.stop_gradient(w) * log_q)
 
 
-def loss_over_q(mean_q, batch_size, key, vanilla=True):
+def loss_over_q(mean_q, batch_size, key, mean_p = None, vanilla=True):
     """Added vanilla_form=False option to check that it doesn't give different results
     (plots look the same)."""
-    dist_q, dist_p = get_dist(mean_q)
+    dist_q, dist_p = get_dist(mean_q, mean_p)
     x, log_q = dist_q.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
     log_p = dist_p.log_prob(x)
     log_w = log_p - log_q
@@ -85,11 +89,11 @@ def loss_over_q(mean_q, batch_size, key, vanilla=True):
         return - jnp.mean(jax.lax.stop_gradient(w_sq) * log_q)
 
 
-def grad_over_p(mean_q, batch_size, key):
-    return jax.grad(loss_over_p)(mean_q, batch_size, key)
+def grad_over_p(mean_q, batch_size, key, mean_p = None):
+    return jax.grad(loss_over_p)(mean_q, batch_size, key, mean_p)
 
-def grad_over_q(mean_q, batch_size, key):
-    return jax.grad(loss_over_q)(mean_q, batch_size, key)
+def grad_over_q(mean_q, batch_size, key, mean_p=None):
+    return jax.grad(loss_over_q)(mean_q, batch_size, key, mean_p=mean_p)
 
 def plot_snr(batch_sizes, loss_hist, ax, c="b", label="", linestyle="-", log_scale=True):
     means = np.array([np.mean(loss_hist[i]) for i in range(len(loss_hist))])
@@ -108,8 +112,8 @@ def plot(batch_sizes, loss_or_grad_hist, ax, c="b", label="", log_scale=False):
 
 
 @partial(jax.jit, static_argnums=(2, 4, 5))
-def ais_forward(mean_q, key, batch_size, transition_operator_state, p_target, ais):
-    dist_q, dist_p = get_dist(mean_q)
+def ais_forward(mean_q, key, batch_size, transition_operator_state, p_target, ais, mean_p = None):
+    dist_q, dist_p = get_dist(mean_q, mean_p)
     key1, key2 = jax.random.split(key)
     base_log_prob = dist_q.log_prob
     if p_target:
@@ -125,7 +129,7 @@ def ais_forward(mean_q, key, batch_size, transition_operator_state, p_target, ai
      target_log_prob=target_log_prob)
     return x_ais, log_w_ais, new_transition_operator_state
 
-def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais=ais):
+def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais, mean_p = None):
     """Run multiple AIS forward passed to get `batch_size` many samples.
     No updating of the transition operator state."""
     n_samples_inner = 100
@@ -134,7 +138,7 @@ def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais
     for i in range(batch_size // n_samples_inner):
         key, subkey = jax.random.split(key)
         x_ais, log_w_ais, _ = ais_forward(mean, subkey, n_samples_inner, transition_operator_state,
-                                          p_target, ais=ais)
+                                          p_target, ais=ais, mean_p=mean_p)
         x_ais_list.append(x_ais)
         log_w_ais_list.append(log_w_ais)
     log_w_ais = jnp.concatenate(log_w_ais_list)
@@ -142,9 +146,9 @@ def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais
     return log_w_ais, x_ais
 
 
-def grad_with_ais_p_target(mean_q, x_ais, log_w_ais):
+def grad_with_ais_p_target(mean_q, x_ais, log_w_ais, mean_p=None):
     def loss(mean_q):
-        dist_q, dist_p = get_dist(mean_q)
+        dist_q, dist_p = get_dist(mean_q, mean_p)
         log_p_x = dist_p.log_prob(x_ais)
         log_q_x = dist_q.log_prob(x_ais)
         f_x = jnp.exp(log_p_x - log_q_x)
@@ -152,9 +156,9 @@ def grad_with_ais_p_target(mean_q, x_ais, log_w_ais):
     return jax.value_and_grad(loss)(mean_q)
 
 
-def grad_with_ais_p2_over_q(mean, x_ais, log_w_ais):
+def grad_with_ais_p2_over_q(mean, x_ais, log_w_ais, mean_p=None):
     def loss(mean_q):
-        dist_q, dist_p = get_dist(mean_q)
+        dist_q, dist_p = get_dist(mean_q, mean_p)
         log_q_x = dist_q.log_prob(x_ais)
         f_x = - log_q_x
         return jnp.mean(jnp.exp(log_w_ais) * f_x)
@@ -180,9 +184,9 @@ if __name__ == '__main__':
 
     total_samples = batch_sizes[-1] * 50
     log_w_ais_p_target_all, x_ais_p_target_all = \
-        ais_get_info(mean_q, key, total_samples, transition_operator_state, p_target=True)
+        ais_get_info(mean_q, key, total_samples, transition_operator_state, p_target=True, ais=ais)
     log_w_ais_p2_over_q_all, x_ais_p2_over_q_all = \
-        ais_get_info(mean_q, key, total_samples, transition_operator_state, p_target=False)
+        ais_get_info(mean_q, key, total_samples, transition_operator_state, p_target=False, ais=ais)
 
     for batch_size in batch_sizes:
         n_runs = total_samples // batch_size
