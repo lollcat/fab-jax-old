@@ -12,7 +12,7 @@ from fabjax.sampling_methods.mcmc.base import TransitionOperator
 
 
 class NoGradParams(NamedTuple):
-    std_devs: jnp.ndarray # per dist, per element
+    std_devs: jnp.ndarray  # per dist, per element
 
 
 class HMCStatePAccept(NamedTuple):

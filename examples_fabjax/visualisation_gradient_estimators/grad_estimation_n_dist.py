@@ -4,18 +4,10 @@ import distrax
 import matplotlib.pyplot as plt
 import numpy as np
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
+    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
-    ais_get_info, grad_with_ais_p2_over_q, plot, plot_snr, grad_over_p, grad_with_ais_p_target, \
-    grad_over_q, loc, AIS_kwargs, figsize, get_dist
-
-
-# loc = 0.25
-# dist_p = distrax.Independent(distrax.Normal(loc=[-loc], scale=1), reinterpreted_batch_ndims=1)
-# AIS_kwargs = {"transition_operator_type": "hmc_tfp",
-#         "additional_transition_operator_kwargs": {
-#                        "n_inner_steps": 5,
-#                        "init_step_size": 1.6}
-#                   }
+    loc, AIS_kwargs, figsize
 
 
 if __name__ == '__main__':
@@ -26,11 +18,12 @@ if __name__ == '__main__':
     # rc('legend', fontsize=15)
     # rc('xtick', labelsize=12)
     # rc('ytick', labelsize=12)
-
+    distribution_spacing_type = "linear"  # "linear"
 
     grad_ais_hist_p2_over_q = []
     grad_ais_hist_p = []
-    mean_q = jnp.array([loc])
+    dim = 1
+    mean_q = jnp.array([loc] * dim)
     key = jax.random.PRNGKey(0)
     n_ais_dists = [1, 2, 4, 8, 16, 32]
     n_runs = 2000
@@ -38,13 +31,14 @@ if __name__ == '__main__':
     total_batch_size = n_runs*batch_size
 
     grad_p = np.asarray(jax.vmap(grad_over_p, in_axes=(None, None, 0))(
-        mean_q, batch_size, jax.random.split(key, n_runs)))
+        mean_q, batch_size, jax.random.split(key, n_runs)))[:, 0]
     grad_q = np.asarray(jax.vmap(grad_over_q, in_axes=(None, None, 0))(
-        mean_q, batch_size, jax.random.split(key, n_runs)))
+        mean_q, batch_size, jax.random.split(key, n_runs)))[:, 0]
 
     for n_ais_dist in n_ais_dists:
         ais = AnnealedImportanceSampler(
             dim=1, n_intermediate_distributions=n_ais_dist,
+            distribution_spacing_type=distribution_spacing_type,
             **AIS_kwargs
         )
         transition_operator_state = ais.transition_operator_manager.get_init_state()
@@ -53,23 +47,26 @@ if __name__ == '__main__':
         log_w_ais, x_ais = ais_get_info(mean_q, key, total_batch_size,
                                         p_target=True,
                                         transition_operator_state=transition_operator_state,
-                                        ais=ais)
+                                        ais=ais,
+                                        mean_p=None)
         log_w_ais = jnp.reshape(log_w_ais, (n_runs, batch_size))
-        x_ais = jnp.reshape(x_ais, (n_runs, batch_size, 1))
+        x_ais = jnp.reshape(x_ais, (n_runs, batch_size, dim))
         loss_ais, grad_ais = jax.vmap(grad_with_ais_p_target, in_axes=(None, 0, 0))(mean_q, x_ais,
                                                                                log_w_ais)
-        grad_ais_hist_p.append(grad_ais)
+        grad_ais_hist_p.append(grad_ais[:, 0])
 
         # over p^2/q
         log_w_ais, x_ais = ais_get_info(mean_q, key, total_batch_size,
                                         p_target=False,
                                         transition_operator_state=transition_operator_state,
-                                        ais=ais)
+                                        ais=ais,
+                                        mean_p=None)
         log_w_ais = jnp.reshape(log_w_ais, (n_runs, batch_size))
-        x_ais = jnp.reshape(x_ais, (n_runs, batch_size, 1))
-        loss_ais, grad_ais = jax.vmap(grad_with_ais_p2_over_q, in_axes=(None, 0, 0))(mean_q, x_ais,
-                                                                               log_w_ais)
-        grad_ais_hist_p2_over_q.append(grad_ais)
+        x_ais = jnp.reshape(x_ais, (n_runs, batch_size, dim))
+        loss_ais, grad_ais = jax.vmap(grad_with_ais_p2_over_q,
+                                      in_axes=(None, 0, 0))(mean_q, x_ais,
+                                                            log_w_ais)
+        grad_ais_hist_p2_over_q.append(grad_ais[:, 0])
 
 
     n_ais_dists = [0] + n_ais_dists
@@ -108,7 +105,6 @@ if __name__ == '__main__':
     # Plot p and q.
     plt.figure(figsize=figsize)
     x = jnp.linspace(-4, 4, 50)[:, None]
-    dist_q = distrax.Independent(distrax.Normal(loc=[loc], scale=1), reinterpreted_batch_ndims=1)
     plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
     plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
     plt.xlabel("x")

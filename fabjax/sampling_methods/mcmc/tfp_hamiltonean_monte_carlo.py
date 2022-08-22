@@ -24,6 +24,7 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
                  target_accept_prob: float = 0.65,
                  adaption_rate: float = 0.05,
                  min_step_size: float = 0.01,
+                 n_outer_steps: int = 1
                  ):
         self.n_leapfrog_steps = n_inner_steps
         self.n_intermediate_distributions = n_intermediate_distributions
@@ -32,12 +33,26 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
         self.target_accept_prob = target_accept_prob
         self.adaption_rate = adaption_rate
         self.min_step_size = min_step_size
+        self.n_outer_steps = n_outer_steps
 
 
     def get_init_state(self) -> chex.ArrayTree:
         return HMCState(self.init_step_size)
 
     def run(self,
+            key: chex.PRNGKey,
+            transition_operator_state: HMCState,
+            x: chex.Array,
+            i: chex.Array,
+            transition_target_log_prob: LogProbFunc) -> \
+            Tuple[chex.Array, chex.ArrayTree, chex.ArrayTree]:
+        for _ in range(self.n_outer_steps):
+            x, transition_operator_state, info = self.one_step(key, transition_operator_state,
+                                                               x, i, transition_target_log_prob)
+        return x, transition_operator_state, info
+
+
+    def one_step(self,
             key: chex.PRNGKey,
             transition_operator_state: HMCState,
             x: chex.Array,
