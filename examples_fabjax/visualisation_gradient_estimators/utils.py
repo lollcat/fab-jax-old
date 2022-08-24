@@ -87,12 +87,14 @@ def ais_forward(mean_q,
     else:
         target_log_prob = lambda x: 2 * dist_p.log_prob(x) - dist_q.log_prob(x)
     x, log_q = dist_q.sample_and_log_prob(seed=key1, sample_shape=(batch_size,))
-    x_ais, log_w_ais, new_transition_operator_state, info = ais.run(
-        x, log_q,
-     key2,
-     transition_operator_state,
-     base_log_prob=base_log_prob,
-     target_log_prob=target_log_prob)
+    x_ais, log_w_ais, new_transition_operator_state, info = \
+        ais.run(
+        x,
+        log_q,
+        key2,
+        transition_operator_state,
+        base_log_prob=base_log_prob,
+        target_log_prob=target_log_prob)
     return x_ais, log_w_ais, new_transition_operator_state
 
 def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais, mean_p = None):
@@ -100,7 +102,7 @@ def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais
     No updating of the transition operator state."""
     n_samples_inner = 100
     # assert batch_size % n_samples_inner == 0
-    x_ais_list, log_w_ais_list= [], []
+    x_ais_list, log_w_ais_list = [], []
     for i in range(batch_size // n_samples_inner):
         key, subkey = jax.random.split(key)
         x_ais, log_w_ais, _ = ais_forward(mean, subkey, n_samples_inner, transition_operator_state,

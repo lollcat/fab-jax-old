@@ -6,6 +6,7 @@ import haiku as hk
 import numpy as np
 from functools import partial
 import distrax
+import matplotlib.pyplot as plt
 
 from fabjax.sampling_methods.mcmc.hamiltonean_monte_carlo import HamiltoneanMonteCarlo, \
     HMCStateGradientBased, HMCStatePAccept
@@ -214,7 +215,6 @@ class Test_HMC(absltest.TestCase):
 
     def test__with_plot(self):
         if not self.run_plot_test:
-            import matplotlib.pyplot as plt
             key = next(self.rng)
             target_samples = np.array(self.target_distribution.sample(seed=key, sample_shape=(
                 self.batch_size,)))
@@ -248,6 +248,38 @@ class Test_HMC(absltest.TestCase):
                 plt.show()
         else:
             pass
+
+    def test_with_histogram(self):
+        n_dim = 1
+        batch_size = 5000
+        target_dist = distrax.MultivariateNormalDiag(loc=jnp.ones(n_dim),
+                                                     scale_diag=jnp.ones(n_dim))
+        key = jax.random.PRNGKey(0)
+
+        target = target_dist.log_prob
+        x = jax.random.normal(key, shape=(batch_size, n_dim))
+        i = jnp.array(1)
+        hmc = HamiltoneanMonteCarlo(n_dim, n_intermediate_distributions=2,
+                                    step_tuning_method=None,
+                                    n_inner_steps=5,
+                                    n_outer_steps=40)
+        transition_operator_state = hmc.get_init_state()
+        # run = jax.jit(hmc.run, static_argnums=4)
+        run = hmc.run
+
+        linspace = jnp.linspace(-3, 5, 20)[:, None]
+        plt.plot(linspace, jnp.exp(target_dist.log_prob(linspace)))
+        plt.hist(x[:, 0], density=True, bins=20)
+        plt.show()
+
+        for _ in range(5):
+            x_new, transition_operator_state, _ = run(key, transition_operator_state, x, i, target)
+
+        linspace = jnp.linspace(-3, 5, 20)[:, None]
+        plt.plot(linspace, jnp.exp(target_dist.log_prob(linspace)))
+        plt.hist(x_new[:, 0], density=True, bins=100)
+        plt.show()
+
 
 
 if __name__ == '__main__':

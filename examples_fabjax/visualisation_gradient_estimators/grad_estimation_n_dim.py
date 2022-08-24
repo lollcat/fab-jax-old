@@ -10,9 +10,6 @@ from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples
 
 
 if __name__ == '__main__':
-    # TODO: go through and check for bugs
-    # TODO: check transition operator hyper-params make sense
-    # TODO: gradient values should overlap completely
     # mpl.rcParams['figure.dpi'] = 300
     # rc('font', **{'family': 'serif', 'serif': ['Times']})
     # rc('text', usetex=True)
@@ -23,23 +20,17 @@ if __name__ == '__main__':
 
     # Whether or not the dims besides the first one are the same.
     # del loc
-    loc = 0.1
-    # AIS_kwargs = {
-    #     "transition_operator_type": "metropolis_tfp",
-    #       "additional_transition_operator_kwargs": {
-    #           "n_inner_steps": 1,
-    #           "init_step_size": 0.2,
-    #       }
-    #               }
+    loc = 0.5
     AIS_kwargs = {
-        "transition_operator_type": "hmc_tfp",
-          "additional_transition_operator_kwargs": {
-              "n_inner_steps": 5,
-              "init_step_size": 0.1, # 1.6,
-              "n_outer_steps": 10,
-              "tune": False
-          }
-          }
+        "transition_operator_type": "hmc",
+        "additional_transition_operator_kwargs": {
+            "n_inner_steps": 5,
+            "init_step_size": 1.6,  # 1.6,
+            "n_outer_steps": 20,
+            "step_tuning_method": None
+        }
+    }
+
     if loc != 0.5:  # tuned for loc=0.5 only
         assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
     common_alt_dims = False
@@ -51,8 +42,8 @@ if __name__ == '__main__':
     ais_samples_over_p = []  # useful for plotting
     ais_samples_over_p2_div_q = []
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8]
-    n_intermediate_dist = 10
+    n_dims = [1, 2, 4, 8, 16, 32]
+    n_intermediate_dist = 16
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
@@ -113,7 +104,6 @@ if __name__ == '__main__':
 
 
     fig, ax = plt.subplots()
-
     plot(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$")
     plot(n_dims, grad_hist_over_p, ax=ax, c="b", label="IS with p")
     plot(n_dims, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p")

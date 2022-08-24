@@ -49,13 +49,14 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         self._initial_step_size = init_step_size
         self.max_grad = max_grad
         self.min_step_size = min_step_size  # when using p_accept method
-        if self.step_tuning_method == "gradient_based":
-            # currently still in "dev version"
-            self.lr = lr
-        elif self.step_tuning_method == "p_accept":
-            self.target_p_accept = 0.65
-        else:
-            raise NotImplementedError
+        if self.step_tuning_method:
+            if self.step_tuning_method == "gradient_based":
+                # currently still in "dev version"
+                self.lr = lr
+            elif self.step_tuning_method == "p_accept":
+                self.target_p_accept = 0.65
+            else:
+                raise NotImplementedError
 
 
     def get_init_state(self):
@@ -70,7 +71,7 @@ class HamiltoneanMonteCarlo(TransitionOperator):
             self.optimizer = optax.adam(self.lr)
             initial_opt_state = self.optimizer.init(step_params)
             initial_state = HMCStateGradientBased(no_grad_params, step_params, initial_opt_state)
-        elif self.step_tuning_method == "p_accept":
+        elif self.step_tuning_method == "p_accept" or self.step_tuning_method is None:
             step_size = jnp.ones((self.n_intermediate_distributions,  self.n_outer_steps))*\
                         self._initial_step_size
             initial_state = HMCStatePAccept(no_grad_params, step_size)
@@ -79,7 +80,7 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         return initial_state
 
     def get_step_size_param_for_dist(self, step_size_params, i):
-        if self.step_tuning_method == "p_accept":
+        if self.step_tuning_method == "p_accept" or self.step_tuning_method is None:
             return step_size_params[i]
         elif self.step_tuning_method == "gradient_based":
             return jnp.exp(step_size_params[i])
@@ -189,7 +190,7 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         info = self.get_key_info(x_batch, current_q_per_outer_loop,
                                  acceptance_probabilities_per_outer_loop,
                                  transition_operator_additional_state_info, i)
-        if self.step_tuning_method == "p_accept":
+        if self.step_tuning_method == "p_accept" or self.step_tuning_method is None:
             return x_batch_final, info
         elif self.step_tuning_method == "gradient_based":
             # prevent nan from 1/0.0
@@ -240,20 +241,22 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         """Vectorised run with updates to transition operator state"""
         def U(x):
             return - target_log_prob(x)
-
-        if self.step_tuning_method == "p_accept":
+        if self.step_tuning_method is None or self.step_tuning_method == "p_accept":
             x_out, info = self.run_and_loss(key,
                                             transition_operator_state.step_size_params,
             transition_operator_state.no_grad_params, x_batch, i, U)
-            # tune step size to reach target of p_accept = 0.65
-            new_step_size_params = self.update_step_size_p_accept(
-                transition_operator_state.step_size_params,
-                info.average_acceptance_probabilities_per_outer_loop,
-            i)
-            no_grad_params = self.update_no_grad_params(i,
-                                                        transition_operator_state.no_grad_params,
-                                                        info)
-            new_transition_operator_state = HMCStatePAccept(no_grad_params, new_step_size_params)
+            if self.step_tuning_method is None:
+                new_transition_operator_state = transition_operator_state
+            else:
+                # tune step size to reach target of p_accept = 0.65
+                new_step_size_params = self.update_step_size_p_accept(
+                    transition_operator_state.step_size_params,
+                    info.average_acceptance_probabilities_per_outer_loop,
+                i)
+                no_grad_params = self.update_no_grad_params(i,
+                                                            transition_operator_state.no_grad_params,
+                                                            info)
+                new_transition_operator_state = HMCStatePAccept(no_grad_params, new_step_size_params)
         else:
             (loss, (x_out, info)), grads = jax.value_and_grad(self.run_and_loss,
                                                             has_aux=True, argnums=1)(

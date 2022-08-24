@@ -25,23 +25,16 @@ loc = 0.5
 mean_q = jnp.array([loc])
 key = jax.random.PRNGKey(0)
 batch_sizes = [100, 1000, 10000]
-# dist_q = distrax.Independent(distrax.Normal(loc=[loc], scale=1), reinterpreted_batch_ndims=1)
-# dist_p = distrax.Independent(distrax.Normal(loc=[-loc], scale=1), reinterpreted_batch_ndims=1)
 
 # Setup AIS.
 n_ais_dist = 3
-AIS_kwargs = {"transition_operator_type": "hmc_tfp",
+AIS_kwargs = {"transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
                        "n_inner_steps": 5,
                        "init_step_size": 1.6,
                         "n_outer_steps": 1
         }
                   }
-# AIS_kwargs = {"transition_operator_type": "metropolis_tfp",
-#         "additional_transition_operator_kwargs": {
-#                        "init_step_size": 1.0,
-#                         "n_inner_steps": 10},
-#               }
 ais = AnnealedImportanceSampler(
     dim=1, n_intermediate_distributions=n_ais_dist,
     **AIS_kwargs

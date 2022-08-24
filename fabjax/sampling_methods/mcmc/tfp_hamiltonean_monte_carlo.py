@@ -86,18 +86,39 @@ class HamiltoneanMonteCarloTFP(TransitionOperator):
 
 if __name__ == '__main__':
     import time
+    import distrax
+    import matplotlib.pyplot as plt
+    n_dim = 1
+    batch_size = 5000
+    target_dist = distrax.MultivariateNormalDiag(loc=jnp.ones(n_dim),
+                                            scale_diag=jnp.ones(n_dim))
     key = jax.random.PRNGKey(0)
 
-    target = lambda x: jnp.mean(- x**2, axis=-1)
-    x = jnp.ones((4, 5))
+    target = target_dist.log_prob
+    x = jax.random.normal(key, shape=(batch_size, n_dim))
     i = jnp.array(1)
-    hmc = HamiltoneanMonteCarloTFP(n_intermediate_distributions=2, tune=True)
+    hmc = HamiltoneanMonteCarloTFP(n_intermediate_distributions=2, tune=False, n_inner_steps=5,
+                                   n_outer_steps=10)
     transition_operator_state = hmc.get_init_state()
     # run = jax.jit(hmc.run, static_argnums=4)
     run = hmc.run
+
+
+    linspace = jnp.linspace(-1, 3, 20)[:, None]
+    plt.plot(linspace, jnp.exp(target_dist.log_prob(linspace)))
+    plt.hist(x[:, 0], density=True, bins=100)
+    plt.show()
 
     for _ in range(5):
         start_time = time.time()
         x_new, transition_operator_state, _ = run(key, transition_operator_state, x, i, target)
         print(time.time() - start_time)
         print(transition_operator_state)
+
+    linspace = jnp.linspace(-1, 3, 20)[:, None]
+    plt.plot(linspace, jnp.exp(target_dist.log_prob(linspace)))
+    plt.hist(x_new[:, 0], density=True, bins=100)
+    plt.show()
+    pass
+
+
