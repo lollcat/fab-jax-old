@@ -39,7 +39,7 @@ if __name__ == '__main__':
     ais_log_w_hist = []
     key = jax.random.PRNGKey(0)
     n_dim = 4
-    n_ais_dist_s = [2, 4, 8, 16]
+    n_ais_dist_s = [2, 4, 8, 16, 32]
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
@@ -76,6 +76,9 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     plt.plot(n_ais_dist_s, 1/jnp.var(jnp.asarray(ais_log_w_hist), axis=1), "o-")
     plt.title("1/var(log_w) as number of ais distributions increases")
+    plt.xlabel("n dist")
+    plt.ylabel('1/var(log_w)')
+    plt.show()
     plt.show()
 
 

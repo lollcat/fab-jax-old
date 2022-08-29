@@ -99,8 +99,8 @@ if __name__ == '__main__':
         grad_ais_p2_over_q_hist.append(grad_ais_p2_over_q[:, 0])
 
     fig, ax = plt.subplots(figsize=figsize)
-    plot_snr(batch_sizes, grad_hist_p, linestyle="dotted", ax=ax, c="black", label="IS with p")
-    plot_snr(batch_sizes, grad_hist_q, linestyle="dashed", ax=ax, c="black", label="IS with q")
+    plot_snr(batch_sizes, grad_hist_p, draw_style="dotted", ax=ax, c="black", label="IS with p")
+    plot_snr(batch_sizes, grad_hist_q, draw_style="dashed", ax=ax, c="black", label="IS with q")
     plot_snr(batch_sizes, grad_ais_p_target_hist, ax=ax, c="b", label="AIS with g = p")
     plot_snr(batch_sizes, grad_ais_p2_over_q_hist, ax=ax, c="r",
              label="AIS with $g=p^2/q$")

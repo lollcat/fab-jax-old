@@ -26,7 +26,7 @@ if __name__ == '__main__':
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
             "init_step_size": 1.6,  # 1.6,
-            "n_outer_steps": 3,
+            "n_outer_steps": 5,
             "step_tuning_method": None
         }
     }
@@ -40,13 +40,14 @@ if __name__ == '__main__':
     grad_ais_hist_p2_over_q = []
 
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16]
-    n_ais_dist_s = [n_dim*3 for n_dim in n_dims]
+    n_dims = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36]
+    n_ais_dist_s = [n_dim for n_dim in n_dims]
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
 
     for (n_ais_dist, n_dim) in zip(n_ais_dist_s, n_dims):
+        print(n_ais_dist, n_dim)
         n_intermediate_dist = n_ais_dist - 1
         mean_q = jnp.array([loc] * n_dim)
         if common_alt_dims:
@@ -88,7 +89,8 @@ if __name__ == '__main__':
 
 
     fig, ax = plt.subplots(figsize=figsize)
-    plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
+    plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$",
+             log_scale=False, draw_style="o-")
     # ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
     plt.xlabel("Number of dimensions")
     plt.ylim(0)

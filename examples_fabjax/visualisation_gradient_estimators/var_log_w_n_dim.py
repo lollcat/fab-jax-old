@@ -26,7 +26,7 @@ if __name__ == '__main__':
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
             "init_step_size": 1.6,  # 1.6,
-            "n_outer_steps": 3,
+            "n_outer_steps": 10,
             "step_tuning_method": None
         }
     }
@@ -34,17 +34,18 @@ if __name__ == '__main__':
     if loc != 0.5:  # tuned for loc=0.5 only
         assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
     common_alt_dims = False
-    distribution_spacing_type = "geometric"
+    distribution_spacing_type = "linear"
     ais_samples_hist = []
     ais_log_w_hist = []
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16, 32, 64]
+    n_dims = [1, 2, 4, 8, 16]
     n_intermediate_dist = 3
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
 
     for n_dim in n_dims:
+        print(n_dim)
         mean_q = jnp.array([loc] * n_dim)
         if common_alt_dims:
             mean_p = jnp.array([-loc] + [loc] * (n_dim - 1))
@@ -74,6 +75,11 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots()
     plt.plot(n_dims, jnp.var(jnp.asarray(ais_log_w_hist), axis=1), "o-")
+    plt.title("var (log_w) with increasing dim")
+    plt.xlabel("n dim")
+    plt.ylabel('var(log_w)')
+    plt.tight_layout()
+    plt.savefig("var_log_w_with_ndim.png", bbox_inches="tight")
     plt.show()
 
 

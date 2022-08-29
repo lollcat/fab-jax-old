@@ -119,9 +119,9 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_dims, grad_hist_over_p,
-             ax=ax, c="black", label="IS with p", linestyle="dotted", log_scale=False)
+             ax=ax, c="black", label="IS with p", draw_style="dotted", log_scale=False)
     plot_snr(n_dims, grad_hist_over_q,
-             ax=ax, c="black", label="IS with q", linestyle="dashed", log_scale=False)
+             ax=ax, c="black", label="IS with q", draw_style="dashed", log_scale=False)
     plot_snr(n_dims, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p", log_scale=False)
     plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
 
