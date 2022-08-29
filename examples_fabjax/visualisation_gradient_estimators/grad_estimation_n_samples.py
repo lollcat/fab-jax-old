@@ -35,16 +35,17 @@ AIS_kwargs = {"transition_operator_type": "hmc",
                         "n_outer_steps": 1
         }
                   }
-ais = AnnealedImportanceSampler(
-    dim=1, n_intermediate_distributions=n_ais_dist,
-    **AIS_kwargs
-)
-transition_operator_state = ais.transition_operator_manager.get_init_state()
 
 
 
 
 if __name__ == '__main__':
+    ais = AnnealedImportanceSampler(
+        dim=1, n_intermediate_distributions=n_ais_dist,
+        **AIS_kwargs
+    )
+    transition_operator_state = ais.transition_operator_manager.get_init_state()
+
     dist_q, dist_p = get_dist(mean_q)
     # Plot p and q.
     plt.figure(figsize=figsize)
