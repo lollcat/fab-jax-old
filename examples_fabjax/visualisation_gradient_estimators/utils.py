@@ -4,6 +4,7 @@ import numpy as np
 import distrax
 from functools import partial
 
+from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 
 
 def get_dist(mean_q, mean_p = None):
@@ -72,21 +73,71 @@ def plot(batch_sizes, loss_or_grad_hist, ax, draw_style="-", c="b", label="", lo
         ax.set_xscale("log")
 
 
+def get_step_size_ais(mean_q, n_ais_dist, ais_kwargs, p_target, batch_size=100, n_iter = 100,
+                      mean_p = None, seed = 0):
+    """Get step size for AIS by running step size tuning to target p_accept for
+    a few iterations."""
+    dim = mean_q.shape[0]
+    key = jax.random.PRNGKey(seed)
+    ais_kwargs["additional_transition_operator_kwargs"]["step_tuning_method"] = \
+        "p_accept"
+    ais = AnnealedImportanceSampler(
+        dim=dim, n_intermediate_distributions=n_ais_dist,
+        **ais_kwargs
+    )
+    transition_operator_state = ais.get_init_state()
+
+    def iter_fn(_, val):
+        transition_operator_state, key = val
+        key, subkey = jax.random.split(key)
+        _, _, transition_operator_state, _ = _ais_forward(
+            mean_q,
+            subkey, batch_size,
+            transition_operator_state,
+            p_target,
+            ais,
+            mean_p)
+        return transition_operator_state, key
+
+    init_val = (transition_operator_state, key)
+    transition_operator_state, _ = jax.lax.fori_loop(0, n_iter, iter_fn, init_val)
+    return transition_operator_state
+
+
+
 @partial(jax.jit, static_argnums=(2, 4, 5))
 def ais_forward(mean_q,
-                key,
-                batch_size,
-                transition_operator_state,
-                p_target: bool,
-                ais,
-                mean_p = None):
+        key,
+        batch_size,
+        transition_operator_state,
+        p_target: bool,
+        ais,
+        mean_p = None):
+    return _ais_forward(mean_q,
+        key,
+        batch_size,
+        transition_operator_state,
+        p_target,
+        ais,
+        mean_p)
+
+
+def _ais_forward(
+        mean_q,
+        rng_key,
+        batch_size,
+        transition_operator_state,
+        p_target: bool,
+        ais,
+        mean_p = None):
     dist_q, dist_p = get_dist(mean_q, mean_p)
-    key1, key2 = jax.random.split(key)
+    key1, key2 = jax.random.split(rng_key)
     base_log_prob = dist_q.log_prob
     if p_target:
         target_log_prob = dist_p.log_prob
     else:
-        target_log_prob = lambda x: 2 * dist_p.log_prob(x) - dist_q.log_prob(x)
+        def target_log_prob(x):
+            return 2 * dist_p.log_prob(x) - dist_q.log_prob(x)
     x, log_q = dist_q.sample_and_log_prob(seed=key1, sample_shape=(batch_size,))
     x_ais, log_w_ais, new_transition_operator_state, info = \
         ais.run(
@@ -96,23 +147,24 @@ def ais_forward(mean_q,
         transition_operator_state,
         base_log_prob=base_log_prob,
         target_log_prob=target_log_prob)
-    return x_ais, log_w_ais, new_transition_operator_state
+    return x_ais, log_w_ais, new_transition_operator_state, info
 
-def ais_get_info(mean, key, batch_size, transition_operator_state, p_target, ais, mean_p = None):
+def ais_get_info(mean, rng_key, batch_size, transition_operator_state, p_target, ais, mean_p = None):
     """Run multiple AIS forward passed to get `batch_size` many samples.
     No updating of the transition operator state."""
     n_samples_inner = 100
     # assert batch_size % n_samples_inner == 0
     x_ais_list, log_w_ais_list = [], []
     for i in range(batch_size // n_samples_inner):
-        key, subkey = jax.random.split(key)
-        x_ais, log_w_ais, _ = ais_forward(mean, subkey, n_samples_inner, transition_operator_state,
+        rng_key, subkey = jax.random.split(rng_key)
+        x_ais, log_w_ais, _, info = ais_forward(mean, subkey, n_samples_inner, transition_operator_state,
                                           p_target, ais=ais, mean_p=mean_p)
         x_ais_list.append(x_ais)
         log_w_ais_list.append(log_w_ais)
     log_w_ais = jnp.concatenate(log_w_ais_list)
     x_ais = jnp.concatenate(x_ais_list)
-    return log_w_ais, x_ais
+    # just return most recent info
+    return log_w_ais, x_ais, info
 
 
 def grad_with_ais_p_target(mean_q, x_ais, log_w_ais, mean_p=None):
@@ -121,7 +173,7 @@ def grad_with_ais_p_target(mean_q, x_ais, log_w_ais, mean_p=None):
         log_p_x = dist_p.log_prob(x_ais)
         log_q_x = dist_q.log_prob(x_ais)
         f_x = jnp.exp(log_p_x - log_q_x)
-        return jnp.sum(jax.nn.softmax(log_w_ais) * f_x)
+        return jnp.mean(jnp.exp(log_w_ais) * f_x)
     return jax.value_and_grad(loss)(mean_q)
 
 

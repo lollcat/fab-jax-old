@@ -39,7 +39,7 @@ class Info(NamedTuple):
 class HamiltoneanMonteCarlo(TransitionOperator):
     def __init__(self, dim, n_intermediate_distributions,
                  step_tuning_method="p_accept", n_outer_steps=1, n_inner_steps=5,
-                 init_step_size: float = 0.1, lr=1e-3, max_grad=1e3, min_step_size=1e-3):
+                 init_step_size: float = 0.1, lr=1e-3, max_grad=1e6, min_step_size=1e-3):
         """ Everything inside init is fixed throughout training, as self is static"""
         self.dim = dim
         self.n_intermediate_distributions = n_intermediate_distributions
@@ -55,6 +55,7 @@ class HamiltoneanMonteCarlo(TransitionOperator):
                 self.lr = lr
             elif self.step_tuning_method == "p_accept":
                 self.target_p_accept = 0.65
+                self.multiplying_factor_p_accept = 1.01
             else:
                 raise NotImplementedError
 
@@ -116,11 +117,11 @@ class HamiltoneanMonteCarlo(TransitionOperator):
         K_current = jnp.sum(current_p ** 2) / 2
         K_proposed = jnp.sum(p ** 2) / 2
 
-        acceptance_probability = jnp.clip(jnp.exp(U_current - U_proposed + K_current - K_proposed),
-                                          a_max=1.0)
+        acceptance_probability = jnp.exp(U_current - U_proposed + K_current - K_proposed)
         # reject samples that have nan acceptance prob
-        acceptance_probability_clip_low = jnp.nan_to_num(acceptance_probability, nan=0.0, posinf=0.0,
-                                                         neginf=0.0)
+        acceptance_probability_clip_low = jnp.clip(
+            jnp.nan_to_num(acceptance_probability, nan=0.0, posinf=0.0, neginf=0.0),
+                                          a_max=1.0)
         accept = (acceptance_probability_clip_low > jax.random.uniform(key=subkey,
                                 shape=acceptance_probability_clip_low.shape))
         current_q = jax.lax.select(accept, q, current_q)
@@ -224,10 +225,11 @@ class HamiltoneanMonteCarlo(TransitionOperator):
     def update_step_size_p_accept(self, step_size_params,
                               average_acceptance_probabilities_per_outer_loop, i):
         average_acceptance_probabilities_per_outer_loop = jnp.nan_to_num(
-            average_acceptance_probabilities_per_outer_loop)
+            average_acceptance_probabilities_per_outer_loop, posinf=0.0, neginf=0.0, nan=0.0)
         multiplying_factor = jnp.where(average_acceptance_probabilities_per_outer_loop >
-                                  self.target_p_accept, jnp.array(1.05),
-                                       jnp.array(1.0)/1.05
+                                  self.target_p_accept,
+                                   jnp.array(self.multiplying_factor_p_accept),
+                                   jnp.array(1.0)/self.multiplying_factor_p_accept
                                   )
         chex.assert_equal_shape([step_size_params[i], multiplying_factor])
         step_size_params = \

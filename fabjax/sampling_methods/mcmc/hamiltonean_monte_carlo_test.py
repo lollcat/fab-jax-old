@@ -220,12 +220,13 @@ class Test_HMC(absltest.TestCase):
                 self.batch_size,)))
             x_init = jax.random.normal(shape=(self.batch_size, self.dim), key=next(self.rng))*0.1
             i = 0
-            n_loops = 10
-            for name, transition_operator_state, HMC_class in [
+            n_loops = 100
+            options = [
                 ("p_accept", self.initial_state_p_accept, self.HMC_p_accept),
-                ("gradient_based", self.initial_state_grad_based, self.HMC_grad_based)]:
+                ("gradient_based", self.initial_state_grad_based, self.HMC_grad_based)]
+            for name, transition_operator_state, HMC_class in [options[0]]:
                 jitted_transition = jax.jit(HMC_class.run,
-                                            static_argnums=(3,4))
+                                            static_argnums=(3, 4))
                 x = x_init
                 logger = ListLogger(save=False)
                 for _ in range(n_loops):
