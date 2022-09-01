@@ -6,7 +6,7 @@ from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImporta
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
     grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
-    figsize, loc, AIS_kwargs
+    figsize, loc, AIS_kwargs, n_ais_dist
 
 
 if __name__ == '__main__':
@@ -18,21 +18,6 @@ if __name__ == '__main__':
     # rc('xtick', labelsize=12)
     # rc('ytick', labelsize=12)
 
-    # Whether or not the dims besides the first one are the same.
-    # del loc
-    # loc = 0.5
-    # AIS_kwargs = {
-    #     "transition_operator_type": "hmc",
-    #     "additional_transition_operator_kwargs": {
-    #         "n_inner_steps": 5,
-    #         "init_step_size": 1.6,
-    #         "n_outer_steps": 20,
-    #         "step_tuning_method": None
-    #     }
-    # }
-
-    if loc != 0.5:  # tuned for loc=0.5 only
-        assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
     common_alt_dims = False
     distribution_spacing_type = "linear"  # "geometric"
     grad_ais_hist_p2_over_q = []
@@ -42,8 +27,8 @@ if __name__ == '__main__':
     ais_samples_over_p = []  # useful for plotting
     ais_samples_over_p2_div_q = []
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16, 32]
-    n_intermediate_dist = 16
+    n_dims = [1, 2, 4, 8, 16]
+    n_intermediate_dist = 5  # n_ais_dist
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
@@ -73,7 +58,7 @@ if __name__ == '__main__':
         transition_operator_state = ais.transition_operator_manager.get_init_state()
 
         # over p
-        log_w_ais, x_ais = ais_get_info(mean_q,
+        log_w_ais, x_ais, info_ais_p = ais_get_info(mean_q,
                                         key,
                                         total_batch_size,
                                         p_target=True,
@@ -88,7 +73,7 @@ if __name__ == '__main__':
         grad_ais_hist_p.append(grad_ais[:, 0])
 
         # over p^2/q
-        log_w_ais, x_ais = ais_get_info(mean_q,
+        log_w_ais, x_ais, info_ais_p2_div_q = ais_get_info(mean_q,
                                         key,
                                         total_batch_size,
                                         p_target=False,
