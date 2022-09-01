@@ -7,6 +7,20 @@ from functools import partial
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 jax.config.update("jax_enable_x64", True)
 
+def analytic_alpha_2_div(mean_q, mean_p = None):
+    """Calculate alpha 2 div using analytic formula, assumes 1 var."""
+    if mean_p is None:
+        mean_p = - jax.lax.stop_gradient(mean_q)
+    return jnp.exp(jnp.sum(mean_p**2 + mean_q**2 - 2*mean_p*mean_q))
+
+def true_gradient_alpha_2_div(mean_q, mean_p = None, autograd=False):
+    if not autograd:
+        if mean_p is None:
+            mean_p = - jax.lax.stop_gradient(mean_q)
+        return analytic_alpha_2_div(mean_q, mean_p) * 2 * (mean_p - mean_q) * (-1)
+    else:
+        return jax.grad(analytic_alpha_2_div)(mean_q, mean_p)
+
 
 def get_dist(mean_q, mean_p = None):
     """If mean_p is None we use a default setting where it is centered on -mean_q for each dim."""
@@ -185,3 +199,10 @@ def grad_with_ais_p2_over_q(mean, x_ais, log_w_ais):
         f_x = - log_q_x
         return jnp.mean(jnp.exp(log_w_ais) * f_x)
     return jax.value_and_grad(loss)(mean)
+
+
+if __name__ == '__main__':
+    mean_q = jnp.array([0.5, 0.5])
+    print(analytic_alpha_2_div(mean_q))
+    print(true_gradient_alpha_2_div(mean_q, None))
+    print(true_gradient_alpha_2_div(mean_q, None, autograd=True))

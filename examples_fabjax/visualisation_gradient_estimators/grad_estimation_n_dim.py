@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
-    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
+    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot, \
+    true_gradient_alpha_2_div
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
     figsize, loc, AIS_kwargs, n_ais_dist
 
@@ -169,7 +170,19 @@ if __name__ == '__main__':
 
     ratio_coeff_ais = [jnp.mean(jnp.exp(log_w*(1/n_dim))) for log_w, n_dim
                        in zip(log_w_ais_fab, n_dims)]
+
+    analytic_grad = [true_gradient_alpha_2_div(jnp.array([loc]*(i+1)))[0] for i in range(4)]
+    print("\n analytic gradient")
+    print(analytic_grad)
+    print("\n fab grad")
+    print(grad_means_fab)
+    print("\n p grad")
+    print(grad_means_p)
+
+
     print(ratio_coeff_fab)
     print(ratio_coeff_p)
     print(ratio_coeff_ais)
+
+
 
