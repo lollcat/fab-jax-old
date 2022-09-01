@@ -25,8 +25,8 @@ if __name__ == '__main__':
         "transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
-            "init_step_size": 0.5,
-            "n_outer_steps": 10,
+            "init_step_size": 0.4,
+            "n_outer_steps": 1,
             "step_tuning_method": None
         }
     }

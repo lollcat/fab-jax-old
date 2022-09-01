@@ -25,7 +25,7 @@ if __name__ == '__main__':
         "transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
-            "init_step_size": 0.5,
+            "init_step_size": 0.4,
             "n_outer_steps": 3,
             "step_tuning_method": None
         }
@@ -75,7 +75,7 @@ if __name__ == '__main__':
     plt.title("1/var(log_w) as number of ais distributions increases")
     plt.xlabel("n dist")
     plt.ylabel('1/var(log_w)')
-    plt.show()
+    plt.savefig("var_log_w_with_ndist.png", bbox_inches="tight")
     plt.show()
 
 

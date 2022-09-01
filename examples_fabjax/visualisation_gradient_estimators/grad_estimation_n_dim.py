@@ -22,13 +22,16 @@ if __name__ == '__main__':
     distribution_spacing_type = "linear"  # "geometric"
     grad_ais_hist_p2_over_q = []
     grad_hist_over_p = []
+    grad_hist_over_p_all_dim = []
     grad_hist_over_q = []
     grad_ais_hist_p = []
     ais_samples_over_p = []  # useful for plotting
     ais_samples_over_p2_div_q = []
+    ais_samples_over_p2_div_q_all_dim = []
+    log_w_ais_fab = []
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16]
-    n_intermediate_dist = 5  # n_ais_dist
+    n_dims = [1, 2, 3, 4, 8, 16]  # , 8, 16]
+    n_intermediate_dist = 3  # n_ais_dist
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
@@ -48,6 +51,7 @@ if __name__ == '__main__':
 
         grad_hist_over_q.append(grad_q[:, 0])
         grad_hist_over_p.append(grad_p[:, 0])
+        grad_hist_over_p_all_dim.append(grad_p)
 
         # AIS based gradient estimators
         ais = AnnealedImportanceSampler(
@@ -81,11 +85,15 @@ if __name__ == '__main__':
                                         ais=ais,
                                         mean_p=mean_p)
         ais_samples_over_p2_div_q.append(x_ais)
+        log_w_ais_fab.append(log_w_ais)
+
         log_w_ais = jnp.reshape(log_w_ais, (n_runs, batch_size))
         x_ais = jnp.reshape(x_ais, (n_runs, batch_size, n_dim))
         loss_ais, grad_ais = jax.vmap(grad_with_ais_p2_over_q, in_axes=(None, 0, 0))(mean_q, x_ais,
                                                                                log_w_ais)
         grad_ais_hist_p2_over_q.append(grad_ais[:, 0])
+        ais_samples_over_p2_div_q_all_dim.append(grad_ais)
+
 
 
     fig, ax = plt.subplots()
@@ -131,3 +139,37 @@ if __name__ == '__main__':
     plt.ylabel("PDF")
     plt.legend()
     plt.show()
+
+
+
+    dist_q, dist_p = get_dist(mean_q)
+    # Plot p and q.
+    plt.figure(figsize=figsize)
+    samples = ais_samples_over_p2_div_q[0][:, 0]
+    x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
+    plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
+    plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
+    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / 3) # , label="p2 over q")
+    plt.hist(samples, density=True, bins=200)
+    plt.xlabel("x")
+    plt.ylabel("PDF")
+    plt.legend()
+    plt.show()
+
+
+    # inspecting ratio
+    assert n_dims[0:4] == [1, 2, 3, 4]
+    grad_means_fab = [jnp.mean(ais_samples_over_p2_div_q_all_dim[i]) for i in range(4)]
+    grad_stds_fab = [jnp.std(ais_samples_over_p2_div_q_all_dim[i]) for i in range(4)]
+    grad_means_p = [jnp.mean(grad_hist_over_p_all_dim[i]) for i in range(4)]
+    grad_stds_p = [jnp.std(grad_hist_over_p_all_dim[i]) for i in range(4)]
+
+    ratio_coeff_fab = jnp.asarray(grad_means_fab[1:])/jnp.asarray(grad_means_fab[:-1])
+    ratio_coeff_p = jnp.asarray(grad_means_p[1:])/jnp.asarray(grad_means_p[:-1])
+
+    ratio_coeff_ais = [jnp.mean(jnp.exp(log_w*(1/n_dim))) for log_w, n_dim
+                       in zip(log_w_ais_fab, n_dims)]
+    print(ratio_coeff_fab)
+    print(ratio_coeff_p)
+    print(ratio_coeff_ais)
+

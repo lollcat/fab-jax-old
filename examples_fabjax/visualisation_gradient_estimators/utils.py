@@ -5,6 +5,7 @@ import distrax
 from functools import partial
 
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
+jax.config.update("jax_enable_x64", True)
 
 
 def get_dist(mean_q, mean_p = None):

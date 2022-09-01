@@ -25,14 +25,11 @@ if __name__ == '__main__':
         "transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
-            "init_step_size": 1.6,  # 1.6,
-            "n_outer_steps": 5,
+            "init_step_size": 0.4,
+            "n_outer_steps": 1,
             "step_tuning_method": None
         }
     }
-
-    if loc != 0.5:  # tuned for loc=0.5 only
-        assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
     common_alt_dims = False
     distribution_spacing_type = "linear"  # "geometric"
     ais_samples_hist = []
@@ -40,8 +37,8 @@ if __name__ == '__main__':
     grad_ais_hist_p2_over_q = []
 
     key = jax.random.PRNGKey(0)
-    n_dims = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36]
-    n_ais_dist_s = [n_dim for n_dim in n_dims]
+    n_dims = [1, 2, 4, 8, 16, 32, 48, 64]
+    n_ais_dist_s = [n_dim*2 for n_dim in n_dims]
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
@@ -65,7 +62,7 @@ if __name__ == '__main__':
         transition_operator_state = ais.transition_operator_manager.get_init_state()
 
         # over p^2/q
-        log_w_ais, x_ais = ais_get_info(mean_q,
+        log_w_ais, x_ais, ais_info = ais_get_info(mean_q,
                                         key,
                                         total_batch_size,
                                         p_target=False,
@@ -85,6 +82,7 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     plt.plot(n_dims, jnp.var(jnp.asarray(ais_log_w_hist), axis=1), "o-")
     plt.title("var(log_w) as number of ais distributions/ and dim of problem increases")
+    plt.savefig(f"empgrad_var_log_w_n_dim_and_n_dist.png", bbox_inches='tight')
     plt.show()
 
 
