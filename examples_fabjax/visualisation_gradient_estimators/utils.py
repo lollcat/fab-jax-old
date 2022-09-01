@@ -5,9 +5,6 @@ import distrax
 from functools import partial
 
 
-# def analytic_grad(mean_q, mean_p):
-
-
 
 def get_dist(mean_q, mean_p = None):
     """If mean_p is None we use a default setting where it is centered on -mean_q for each dim."""
@@ -66,10 +63,10 @@ def plot_snr(batch_sizes, loss_hist, ax, c="b", label="", draw_style="-", log_sc
     if log_scale:
         ax.set_xscale("log")
 
-def plot(batch_sizes, loss_or_grad_hist, ax, c="b", label="", log_scale=False):
+def plot(batch_sizes, loss_or_grad_hist, ax, draw_style="-", c="b", label="", log_scale=False):
     means = np.array([np.mean(loss_or_grad_hist[i]) for i in range(len(loss_or_grad_hist))])
     stds = np.array([np.std(loss_or_grad_hist[i]) for i in range(len(loss_or_grad_hist))])
-    ax.plot(batch_sizes, means, color=c, label=label)
+    ax.plot(batch_sizes, means, draw_style, color=c, label=label)
     ax.fill_between(batch_sizes, means - stds, means + stds, alpha=0.1, color=c)
     if log_scale:
         ax.set_xscale("log")

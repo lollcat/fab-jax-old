@@ -6,7 +6,7 @@ from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImporta
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
     grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
-    figsize  # loc, AIS_kwargs,
+    figsize, loc, AIS_kwargs
 
 
 if __name__ == '__main__':
@@ -20,16 +20,16 @@ if __name__ == '__main__':
 
     # Whether or not the dims besides the first one are the same.
     # del loc
-    loc = 0.5
-    AIS_kwargs = {
-        "transition_operator_type": "hmc",
-        "additional_transition_operator_kwargs": {
-            "n_inner_steps": 5,
-            "init_step_size": 1.6,  # 1.6,
-            "n_outer_steps": 20,
-            "step_tuning_method": None
-        }
-    }
+    # loc = 0.5
+    # AIS_kwargs = {
+    #     "transition_operator_type": "hmc",
+    #     "additional_transition_operator_kwargs": {
+    #         "n_inner_steps": 5,
+    #         "init_step_size": 1.6,
+    #         "n_outer_steps": 20,
+    #         "step_tuning_method": None
+    #     }
+    # }
 
     if loc != 0.5:  # tuned for loc=0.5 only
         assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
@@ -119,9 +119,9 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_dims, grad_hist_over_p,
-             ax=ax, c="black", label="IS with p", draw_style="dotted", log_scale=False)
+             ax=ax, c="black", label="IS with p", draw_style=":", log_scale=False)
     plot_snr(n_dims, grad_hist_over_q,
-             ax=ax, c="black", label="IS with q", draw_style="dashed", log_scale=False)
+             ax=ax, c="black", label="IS with q", draw_style="--", log_scale=False)
     plot_snr(n_dims, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p", log_scale=False)
     plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
 

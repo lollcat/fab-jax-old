@@ -17,7 +17,7 @@ class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
     def __init__(self,
                  dim: int,
                  n_intermediate_distributions: int = 1,
-                 transition_operator_type: str = "hmc_tfp",
+                 transition_operator_type: str = "hmc",
                  additional_transition_operator_kwargs: Dict = {},
                  distribution_spacing_type: str = "linear"
                  ):

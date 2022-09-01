@@ -26,7 +26,7 @@ if __name__ == '__main__':
     mean_q = jnp.array([loc] * dim)
     key = jax.random.PRNGKey(0)
     n_ais_dists = [1, 2, 4, 8, 16, 32]
-    n_runs = 2000
+    n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
 
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     for n_ais_dist in n_ais_dists:
         ais = AnnealedImportanceSampler(
-            dim=1, n_intermediate_distributions=n_ais_dist,
+            dim=dim, n_intermediate_distributions=n_ais_dist,
             distribution_spacing_type=distribution_spacing_type,
             **AIS_kwargs
         )
@@ -87,9 +87,9 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_ais_dists, jnp.repeat(grad_p[None, ...], len(n_ais_dists), axis=0),
-             ax=ax, c="black", label="IS with p", draw_style="dotted", log_scale=False)
+             ax=ax, c="black", label="IS with p", draw_style=":", log_scale=False)
     plot_snr(n_ais_dists, jnp.repeat(grad_q[None, ...], len(n_ais_dists), axis=0),
-             ax=ax, c="black", label="IS with q", draw_style="dashed", log_scale=False)
+             ax=ax, c="black", label="IS with q", draw_style="--", log_scale=False)
     plot_snr(n_ais_dists, grad_ais_hist_p, ax=ax, c="b", label="AIS with g = p", log_scale=False)
     plot_snr(n_ais_dists, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$", log_scale=False)
 

@@ -22,10 +22,10 @@ if __name__ == '__main__':
     # del loc
     loc = 0.5
     AIS_kwargs = {
-        "transition_operator_type": "hmc",
+        "transition_operator_type": "hmc_tfp",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
-            "init_step_size": 1.6,  # 1.6,
+            "init_step_size": 1.6,
             "n_outer_steps": 10,
             "step_tuning_method": None
         }
@@ -38,8 +38,8 @@ if __name__ == '__main__':
     ais_samples_hist = []
     ais_log_w_hist = []
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16]
-    n_intermediate_dist = 3
+    n_dims = [1, 2, 4, 8, 12, 16, 18, 24, 36]
+    n_intermediate_dist = 10
     n_runs = 10000
     batch_size = 100
     total_batch_size = n_runs*batch_size
