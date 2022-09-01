@@ -25,14 +25,11 @@ if __name__ == '__main__':
         "transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
-            "init_step_size": 1.6,  # 1.6,
+            "init_step_size": 0.5,
             "n_outer_steps": 3,
             "step_tuning_method": None
         }
     }
-
-    if loc != 0.5:  # tuned for loc=0.5 only
-        assert AIS_kwargs["additional_transition_operator_kwargs"]["init_step_size"] != 1.6
     common_alt_dims = False
     distribution_spacing_type = "linear"  # "geometric"
     ais_samples_hist = []
@@ -62,7 +59,7 @@ if __name__ == '__main__':
         transition_operator_state = ais.transition_operator_manager.get_init_state()
 
         # over p^2/q
-        log_w_ais, x_ais = ais_get_info(mean_q,
+        log_w_ais, x_ais, ais_info = ais_get_info(mean_q,
                                         key,
                                         total_batch_size,
                                         p_target=False,

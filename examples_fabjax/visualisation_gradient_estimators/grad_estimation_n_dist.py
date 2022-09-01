@@ -20,6 +20,16 @@ if __name__ == '__main__':
     # rc('ytick', labelsize=12)
     distribution_spacing_type = "linear"  # "linear"
 
+    AIS_kwargs = {
+        "transition_operator_type": "hmc",
+        "additional_transition_operator_kwargs": {
+            "n_inner_steps": 5,
+            "init_step_size": 0.4,
+            "n_outer_steps": 1,
+            "step_tuning_method": None
+        }
+    }
+
     grad_ais_hist_p2_over_q = []
     grad_ais_hist_p = []
     dim = 1
@@ -44,7 +54,7 @@ if __name__ == '__main__':
         transition_operator_state = ais.transition_operator_manager.get_init_state()
 
         # over p
-        log_w_ais, x_ais = ais_get_info(mean_q, key, total_batch_size,
+        log_w_ais, x_ais, info_ais_p = ais_get_info(mean_q, key, total_batch_size,
                                         p_target=True,
                                         transition_operator_state=transition_operator_state,
                                         ais=ais,
@@ -56,7 +66,7 @@ if __name__ == '__main__':
         grad_ais_hist_p.append(grad_ais[:, 0])
 
         # over p^2/q
-        log_w_ais, x_ais = ais_get_info(mean_q, key, total_batch_size,
+        log_w_ais, x_ais, info_ais_p2_div_q = ais_get_info(mean_q, key, total_batch_size,
                                         p_target=False,
                                         transition_operator_state=transition_operator_state,
                                         ais=ais,
