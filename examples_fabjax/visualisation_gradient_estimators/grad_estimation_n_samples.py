@@ -47,7 +47,7 @@ AIS_kwargs = {
     "transition_operator_type": "hmc",
     "additional_transition_operator_kwargs": {
         "n_inner_steps": 5,
-        "init_step_size": 0.5,
+        "init_step_size": 1.0,
         "n_outer_steps": 1,
         "step_tuning_method": None
     }
@@ -174,7 +174,7 @@ if __name__ == '__main__':
     x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
     plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
     plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
-    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / 3) # , label="p2 over q")
+    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / 3, label="p2 div q") # , label="p2 over q")
     plt.hist(samples, density=True, bins=200)
     plt.xlabel("x")
     plt.ylabel("PDF")
