@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
-    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
+    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot, \
+    log_w_over_p
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
     figsize  # loc, AIS_kwargs,
 
@@ -34,10 +35,12 @@ if __name__ == '__main__':
     distribution_spacing_type = "linear"  # "geometric"
     ais_samples_hist = []
     ais_log_w_hist = []
+    p_IS_log_w_hist = []
+    grad_hist_over_p = []
     grad_ais_hist_p2_over_q = []
 
     key = jax.random.PRNGKey(0)
-    n_dims = [1, 2, 4, 8, 16, 32, 48, 64]
+    n_dims = [1, 2, 4, 8] # , 16, 32]  # , 16, 32, 48, 64]
     n_ais_dist_s = [n_dim*2 for n_dim in n_dims]
     n_runs = 10000
     batch_size = 100
@@ -52,6 +55,12 @@ if __name__ == '__main__':
         else:
             mean_p = -mean_q
         assert mean_q.shape == mean_p.shape
+
+        grad_p = np.asarray(jax.vmap(grad_over_p, in_axes=(None, None, 0, None))(
+            mean_q, batch_size, jax.random.split(key, n_runs), mean_p))
+        grad_hist_over_p.append(grad_p[:, 0])
+        log_w_p = log_w_over_p(mean_q, batch_size*n_runs, key, mean_p)
+        p_IS_log_w_hist.append(log_w_p)
 
         # AIS based gradient estimators
         ais = AnnealedImportanceSampler(
@@ -80,8 +89,11 @@ if __name__ == '__main__':
 
 
     fig, ax = plt.subplots()
-    plt.plot(n_dims, jnp.var(jnp.asarray(ais_log_w_hist), axis=1), "o-")
-    plt.title("var(log_w) as number of ais distributions/ and dim of problem increases")
+    plt.plot(n_dims, jnp.var(jnp.asarray(ais_log_w_hist), axis=1), "o-", label="fab")
+    plt.plot(n_dims, jnp.var(jnp.asarray(p_IS_log_w_hist), axis=1), "o-", label="is with p")
+    plt.ylabel("var(log_w)")
+    plt.xlabel("number of dimensions")
+    plt.legend()
     plt.savefig(f"empgrad_var_log_w_n_dim_and_n_dist.png", bbox_inches='tight')
     plt.show()
 
@@ -89,6 +101,8 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$",
              log_scale=False, draw_style="o-")
+    plot_snr(n_dims, grad_hist_over_p,
+             ax=ax, c="black", label="IS with p", draw_style=":", log_scale=False)
     # ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
     plt.xlabel("Number of dimensions")
     plt.ylim(0)

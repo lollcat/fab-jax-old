@@ -52,6 +52,14 @@ def loss_over_p(mean_q, batch_size, key, mean_p=None, vanilla_form=True):
         return - jnp.mean(jax.lax.stop_gradient(w) * log_q)
 
 
+def log_w_over_p(mean_q, batch_size, key, mean_p=None):
+    dist_q, dist_p = get_dist(mean_q, mean_p)
+    x, log_p = dist_p.sample_and_log_prob(seed=key, sample_shape=(batch_size,))
+    log_q = dist_q.log_prob(x)
+    log_w = log_p - log_q
+    return log_w
+
+
 def loss_over_q(mean_q, batch_size, key, mean_p = None, vanilla=True):
     """Added vanilla_form=False option to check that it doesn't give different results
     (plots look the same)."""
