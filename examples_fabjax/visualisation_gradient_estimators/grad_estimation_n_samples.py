@@ -159,19 +159,6 @@ if __name__ == '__main__':
 
     analytic_grad = true_gradient_alpha_2_div(mean_q)[0]
 
-    # plot all together
-    # fig, ax = plt.subplots()
-    # plot(batch_sizes, grad_ais_p2_over_q_hist, ax=ax, c="r", label="AIS with $g=p^2/q$")
-    # plot(batch_sizes, grad_hist_p, ax=ax, draw_style="--", c="g", label="IS with p")
-    # # plot(batch_sizes, grad_hist_q, ax=ax, draw_style="--", c="b", label="IS with q")
-    # plot(batch_sizes, grad_ais_p_target_hist, ax=ax, c="b", label="AIS with g = p")
-    # plt.plot(batch_sizes, [analytic_grad for i in range(len(batch_sizes))], c="black",
-    #          label="true gradient")
-    # ax.legend()
-    # plt.xlabel("number of intermediate AIS distributions")
-    # plt.ylabel("gradient w.r.t mean of q")
-    # plt.show()
-
     fig, axs = plt.subplots(2, 2, sharex=True, figsize= (15, 15))
     axs[0, 0].set_ylabel("gradient w.r.t $\mu_1$")
     axs[0, 1].set_ylabel("gradient w.r.t $\mu_1$")

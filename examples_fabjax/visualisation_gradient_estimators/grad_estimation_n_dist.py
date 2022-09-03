@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
-    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot
+    grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot, \
+    true_gradient_alpha_2_div, analytic_alpha_2_div
 from examples_fabjax.visualisation_gradient_estimators.grad_estimation_n_samples import \
     loc, AIS_kwargs, figsize
 
@@ -20,19 +21,9 @@ if __name__ == '__main__':
     # rc('ytick', labelsize=12)
     distribution_spacing_type = "linear"  # "linear"
 
-    AIS_kwargs = {
-        "transition_operator_type": "hmc",
-        "additional_transition_operator_kwargs": {
-            "n_inner_steps": 5,
-            "init_step_size": 0.4,
-            "n_outer_steps": 1,
-            "step_tuning_method": None
-        }
-    }
-
     grad_ais_hist_p2_over_q = []
     grad_ais_hist_p = []
-    dim = 1
+    dim = 2
     mean_q = jnp.array([loc] * dim)
     key = jax.random.PRNGKey(0)
     n_ais_dists = [1, 2, 4, 8, 16, 32]
@@ -79,21 +70,34 @@ if __name__ == '__main__':
         grad_ais_hist_p2_over_q.append(grad_ais[:, 0])
 
 
+    # Now plots:
+
+
+
+    analytic_grad = true_gradient_alpha_2_div(mean_q)[0]
+
+    fig, axs = plt.subplots(2, 2, sharex=True, figsize= (15, 15))
+    axs[0, 0].set_ylabel("gradient w.r.t $\mu_1$")
+    axs[0, 1].set_ylabel("gradient w.r.t $\mu_1$")
+    axs[1, 1].set_xlabel("n ais distributions")
+    axs[1, 0].set_xlabel("n ais distributions")
+    axs = axs.flatten()
+    plot(n_ais_dists, grad_ais_hist_p2_over_q, ax=axs[0], c="b", label="AIS with $g=p^2/q$")
+    plot(n_ais_dists, grad_ais_hist_p, ax=axs[1], c="b", label="AIS with g = p")
+    plot(n_ais_dists, jnp.repeat(grad_p[None, ...], len(n_ais_dists), axis=0), ax=axs[2], c="b", label="IS with p")
+    plot(n_ais_dists, jnp.repeat(grad_q[None, ...], len(n_ais_dists), axis=0), ax=axs[3], c="b", label="IS with q")
+    for i in range(4):
+        axs[i].plot(n_ais_dists, [analytic_grad for i in range(len(n_ais_dists))], "--", c="black",
+                 label="true gradient")
+        axs[i].legend()
+    plt.tight_layout()
+    plt.show()
+
+    # Could do the below for AIS with 0 intermediate distributions, i.e. IS.
     n_ais_dists = [0] + n_ais_dists
     grad_ais_hist_p2_over_q = [grad_q] + grad_ais_hist_p2_over_q
     grad_ais_hist_p = [grad_q] + grad_ais_hist_p
 
-    fig, ax = plt.subplots()
-
-    plot(n_ais_dists, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$")
-    plot(n_ais_dists, jnp.repeat(grad_p[None, ...], len(n_ais_dists), axis=0),
-                                 ax=ax, c="b", label="IS with p")
-    plot(n_ais_dists, grad_ais_hist_p,
-         ax=ax, c="b", label="AIS with g = p")
-    ax.legend()
-    plt.xlabel("number of intermediate AIS distributions")
-    plt.ylabel("gradient w.r.t mean of q")
-    plt.show()
 
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(n_ais_dists, jnp.repeat(grad_p[None, ...], len(n_ais_dists), axis=0),
