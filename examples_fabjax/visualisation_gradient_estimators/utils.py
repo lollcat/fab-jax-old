@@ -29,6 +29,8 @@ def get_dist(mean_q, mean_p = None):
     if mean_p is None:
         mean_p = - jax.lax.stop_gradient(mean_q)
     assert mean_q.shape == mean_p.shape
+    # dist_p = distrax.MultivariateNormalTri(loc=mean_p)
+    # dist_q = distrax.MultivariateNormalTri(loc=mean_q)
     dist_p = distrax.MultivariateNormalDiag(loc=mean_p,
                                             scale_diag=jnp.ones(n_dim))
     dist_q = distrax.MultivariateNormalDiag(loc=mean_q,

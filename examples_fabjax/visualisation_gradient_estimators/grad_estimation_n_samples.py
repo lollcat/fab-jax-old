@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from fabjax.sampling_methods.annealed_importance_sampling import AnnealedImportanceSampler
 from examples_fabjax.visualisation_gradient_estimators.utils import get_dist, ais_get_info, \
     grad_over_p, grad_over_q, plot_snr, grad_with_ais_p2_over_q, grad_with_ais_p_target, plot, \
-    get_step_size_ais
+    get_step_size_ais, true_gradient_alpha_2_div, analytic_alpha_2_div
 from matplotlib import rc
 import matplotlib as mpl
 jax.config.update("jax_enable_x64", True)
@@ -31,11 +31,11 @@ figsize = (figsize, figsize+1.0)
 
 # Setup distributions p and q.
 loc = 0.5
-dim = 1
+dim = 2
 mean_q = jnp.array([loc]*dim)
 mean_p = None  # use default
 key = jax.random.PRNGKey(1)
-batch_sizes = [100, 1000, 10000]
+batch_sizes = [100, 500, 1000, 5000, 10000]
 total_samples = batch_sizes[-1] * 100
 
 
@@ -43,11 +43,14 @@ total_samples = batch_sizes[-1] * 100
 tune_step_size_ais = False
 n_ais_dist = 3
 
+
+# Note: It is important to tune the below step size. If set to large the gradient for FAB becomes
+# biased.
 AIS_kwargs = {
     "transition_operator_type": "hmc",
     "additional_transition_operator_kwargs": {
         "n_inner_steps": 5,
-        "init_step_size": 1.0,
+        "init_step_size": 0.5,
         "n_outer_steps": 1,
         "step_tuning_method": None
     }
@@ -138,6 +141,8 @@ if __name__ == '__main__':
             mean_q, x_ais_p2_over_q, log_w_ais_p2_over_q)
         grad_ais_p2_over_q_hist.append(grad_ais_p2_over_q[:, 0])
 
+    # Now plots:
+    mean_q_1d = jnp.array([loc])
 
     fig, ax = plt.subplots(figsize=figsize)
     plot_snr(batch_sizes, grad_hist_p, draw_style=":", ax=ax, c="black", label="IS with p")
@@ -152,29 +157,50 @@ if __name__ == '__main__':
     plt.savefig("empgrad_SNR_nsamples.png", bbox_inches='tight')
     plt.show()
 
+    analytic_grad = true_gradient_alpha_2_div(mean_q)[0]
 
-    fig, ax = plt.subplots()
-    plot(batch_sizes, grad_ais_p2_over_q_hist, ax=ax, c="r", label="AIS with $g=p^2/q$")
-    plot(batch_sizes, grad_hist_p, ax=ax, draw_style="--", c="b", label="IS with p")
-    plot(batch_sizes, grad_hist_q, ax=ax, draw_style="--", c="b", label="IS with q")
-    plot(batch_sizes, grad_ais_p_target_hist,
-         ax=ax, c="b", label="AIS with g = p")
-    ax.legend()
-    plt.xlabel("number of intermediate AIS distributions")
-    plt.ylabel("gradient w.r.t mean of q")
+    # plot all together
+    # fig, ax = plt.subplots()
+    # plot(batch_sizes, grad_ais_p2_over_q_hist, ax=ax, c="r", label="AIS with $g=p^2/q$")
+    # plot(batch_sizes, grad_hist_p, ax=ax, draw_style="--", c="g", label="IS with p")
+    # # plot(batch_sizes, grad_hist_q, ax=ax, draw_style="--", c="b", label="IS with q")
+    # plot(batch_sizes, grad_ais_p_target_hist, ax=ax, c="b", label="AIS with g = p")
+    # plt.plot(batch_sizes, [analytic_grad for i in range(len(batch_sizes))], c="black",
+    #          label="true gradient")
+    # ax.legend()
+    # plt.xlabel("number of intermediate AIS distributions")
+    # plt.ylabel("gradient w.r.t mean of q")
+    # plt.show()
+
+    fig, axs = plt.subplots(2, 2, sharex=True, figsize= (15, 15))
+    axs[0, 0].set_ylabel("gradient w.r.t $\mu_1$")
+    axs[0, 1].set_ylabel("gradient w.r.t $\mu_1$")
+    axs[1, 1].set_xlabel("batch size")
+    axs[1, 0].set_xlabel("batch size")
+    axs = axs.flatten()
+    plot(batch_sizes, grad_ais_p2_over_q_hist, ax=axs[0], c="b", label="AIS with $g=p^2/q$")
+    plot(batch_sizes, grad_ais_p_target_hist, ax=axs[1], c="b", label="AIS with g = p")
+    plot(batch_sizes, grad_hist_p, ax=axs[2], c="b", label="IS with p")
+    plot(batch_sizes, grad_hist_q, ax=axs[3], c="b", label="IS with q")
+    for i in range(4):
+        axs[i].plot(batch_sizes, [analytic_grad for i in range(len(batch_sizes))], "--", c="black",
+                 label="true gradient")
+        axs[i].legend()
+    plt.tight_layout()
     plt.show()
 
 
     # Check histogram of samples from AIS.
 
-    dist_q, dist_p = get_dist(mean_q)
+    dist_q, dist_p = get_dist(mean_q_1d)
+    alpha_2_div_1d = analytic_alpha_2_div(mean_q_1d)
     # Plot p and q.
     plt.figure(figsize=figsize)
     samples = x_ais_p2_over_q_all[:, 0]
     x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
     plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
     plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
-    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / 3, label="p2 div q") # , label="p2 over q")
+    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / alpha_2_div_1d, label="$g \propto p^2/q$") # , label="p2 over q")
     plt.hist(samples, density=True, bins=200)
     plt.xlabel("x")
     plt.ylabel("PDF")

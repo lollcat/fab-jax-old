@@ -96,6 +96,9 @@ if __name__ == '__main__':
         ais_samples_over_p2_div_q_all_dim.append(grad_ais)
 
 
+    # Now plots:
+    mean_q_1d = jnp.array([loc])
+
 
     fig, ax = plt.subplots()
     plot(n_dims, grad_ais_hist_p2_over_q, ax=ax, c="r", label="AIS with $g=p^2/q$")
@@ -129,8 +132,8 @@ if __name__ == '__main__':
                 bbox_inches='tight')
     plt.show()
 
-    mean_q = jnp.array([loc])
-    dist_q, dist_p = get_dist(mean_q)
+
+    dist_q, dist_p = get_dist(mean_q_1d)
     # Plot p and q.
     plt.figure(figsize=figsize)
     x = jnp.linspace(-4, 4, 50)[:, None]
@@ -143,7 +146,7 @@ if __name__ == '__main__':
 
 
 
-    dist_q, dist_p = get_dist(mean_q)
+    dist_q, dist_p = get_dist(mean_q_1d)
     # Plot p and q.
     plt.figure(figsize=figsize)
     samples = ais_samples_over_p2_div_q[0][:, 0]
