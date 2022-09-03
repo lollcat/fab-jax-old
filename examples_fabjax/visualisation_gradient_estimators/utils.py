@@ -82,10 +82,13 @@ def grad_over_p(mean_q, batch_size, key, mean_p = None):
 def grad_over_q(mean_q, batch_size, key, mean_p=None):
     return jax.grad(loss_over_q)(mean_q, batch_size, key, mean_p=mean_p)
 
-def plot_snr(batch_sizes, loss_hist, ax, c="b", label="", draw_style="-", log_scale=True):
+def plot_snr(batch_sizes, loss_hist, ax, c=None, label="", draw_style="-", log_scale=True):
     means = np.array([np.mean(loss_hist[i]) for i in range(len(loss_hist))])
     stds = np.array([np.std(loss_hist[i]) for i in range(len(loss_hist))])
-    ax.plot(batch_sizes, means / stds, draw_style, color=c, label=label)
+    if c:
+        ax.plot(batch_sizes, means / stds, draw_style, color=c, label=label)
+    else:
+        ax.plot(batch_sizes, means / stds, draw_style, label=label)
     if log_scale:
         ax.set_xscale("log")
 
