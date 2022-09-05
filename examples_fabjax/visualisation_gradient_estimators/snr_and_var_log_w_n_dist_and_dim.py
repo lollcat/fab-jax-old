@@ -40,7 +40,7 @@ if __name__ == '__main__':
     grad_ais_hist_p2_over_q = []
 
     key = jax.random.PRNGKey(0)
-    n_dims = list(np.unique(np.geomspace(2, 32, 12, dtype=int)))
+    n_dims = list(np.unique(np.linspace(2, 48, 12, dtype=int)))
     n_ais_dist_s = [n_dim for n_dim in n_dims]
     n_runs = 10000
     batch_size = 100

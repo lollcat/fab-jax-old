@@ -27,20 +27,6 @@ class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
             self.transition_operator_manager = HamiltoneanMonteCarlo(
                 dim, n_intermediate_distributions,
                 **additional_transition_operator_kwargs)
-        elif transition_operator_type == "hmc_tfp":
-            from fabjax.sampling_methods.mcmc.tfp_hamiltonean_monte_carlo import HamiltoneanMonteCarloTFP
-            self.transition_operator_manager = HamiltoneanMonteCarloTFP(
-                n_intermediate_distributions,
-                **additional_transition_operator_kwargs)
-        elif transition_operator_type == "nuts_tfp":
-            from fabjax.sampling_methods.mcmc.tfp_nuts import NoUTurnSamplerTFP
-            self.transition_operator_manager = NoUTurnSamplerTFP(
-                n_intermediate_distributions,
-                **additional_transition_operator_kwargs)
-        elif transition_operator_type == "metropolis_tfp":
-            from fabjax.sampling_methods.mcmc.tfp_metropolis import MetropolisTFP
-            self.transition_operator_manager = MetropolisTFP(
-                n_intermediate_distributions, **additional_transition_operator_kwargs)
         else:
             raise NotImplementedError
         self.n_intermediate_distributions = n_intermediate_distributions
