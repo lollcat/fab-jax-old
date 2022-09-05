@@ -14,7 +14,7 @@ flow:
 fab:
   loss_type: alpha_2_div
   transition_operator:
-    type: hmc_tfp
+    type: hmc
     n_inner_steps: 5
     init_step_size: 0.2 # give good step size initialisation
   n_intermediate_distributions: 4

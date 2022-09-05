@@ -2,7 +2,7 @@
 See corresponding paper [here](https://arxiv.org/abs/2111.11510).
 
 This repo is still a work in progress, the ```fab``` folder and ```examples``` have some working 
-illustrative problems, while ```fab_vae``` and ```fab_bnn``` are still works in progress.
+illustrative problems.
 
 ## Install
 ```
