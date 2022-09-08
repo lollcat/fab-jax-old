@@ -31,7 +31,7 @@ figsize = (figsize, figsize+1.0)
 
 # Setup distributions p and q.
 loc = 0.5
-dim = 2
+dim = 1
 mean_q = jnp.array([loc]*dim)
 mean_p = None  # use default
 key = jax.random.PRNGKey(1)
@@ -46,7 +46,7 @@ n_ais_dist = 3
 
 # Note: It is important to tune the below step size. If set to large the gradient for FAB becomes
 # biased.
-AIS_kwargs = {
+AIS_kwargs_custom = {
     "transition_operator_type": "hmc",
     "additional_transition_operator_kwargs": {
         "n_inner_steps": 5,
@@ -55,8 +55,17 @@ AIS_kwargs = {
         "step_tuning_method": None
     }
             }
+AIS_kwargs_blackjax = {
+    "transition_operator_type": "hmc_blackjax",
+    "additional_transition_operator_kwargs": {
+        "n_inner_steps": 5,
+        "init_step_size": 0.5,
+        "n_outer_steps": 1,
+    }
+            }
+use_blackjax = True
 
-
+AIS_kwargs = AIS_kwargs_blackjax
 
 if __name__ == '__main__':
     ais = AnnealedImportanceSampler(
@@ -100,15 +109,18 @@ if __name__ == '__main__':
         ais_get_info(mean_q, key, total_samples, transition_operator_state_p_2_div_q,
                      p_target=False, ais=ais)
 
+
     print("\np_accepts ais with p target:")
     print([info_ais_p[f"mean_p_accept_dist{i}"] for i in range(n_ais_dist)])
-    print("\nstep sizes ais with p target: ")
-    print(transition_operator_state_p.step_size_params)
+    if not use_blackjax:
+        print("\nstep sizes ais with p target: ")
+        print(transition_operator_state_p.step_size_params)
 
     print("\np_accepts ais with p^2/q target:")
     print([info_ais_p2_div_q[f"mean_p_accept_dist{i}"] for i in range(n_ais_dist)])
-    print("\nstep sizes ais with p^2/q target:")
-    print(transition_operator_state_p_2_div_q.step_size_params)
+    if not use_blackjax:
+        print("\nstep sizes ais with p^2/q target:")
+        print(transition_operator_state_p_2_div_q.step_size_params)
 
 
     for batch_size in batch_sizes:

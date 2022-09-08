@@ -27,6 +27,11 @@ class AnnealedImportanceSampler(AnnealedImportanceSamplerBase):
             self.transition_operator_manager = HamiltoneanMonteCarlo(
                 dim, n_intermediate_distributions,
                 **additional_transition_operator_kwargs)
+        elif transition_operator_type == "hmc_blackjax":
+            from fabjax.sampling_methods.mcmc.hmc_blackjax import HamiltoneanMonteCarloBlackJax
+            self.transition_operator_manager = HamiltoneanMonteCarloBlackJax(
+                dim, n_intermediate_distributions,
+                **additional_transition_operator_kwargs)
         else:
             raise NotImplementedError
         self.n_intermediate_distributions = n_intermediate_distributions
