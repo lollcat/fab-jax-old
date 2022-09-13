@@ -41,7 +41,7 @@ total_samples = batch_sizes[-1] * 100
 
 # Setup AIS.
 tune_step_size_ais = False
-n_ais_dist = 3
+n_ais_dist = 4
 
 
 # Note: It is important to tune the below step size. If set to large the gradient for FAB becomes
@@ -59,7 +59,7 @@ AIS_kwargs_blackjax = {
     "transition_operator_type": "hmc_blackjax",
     "additional_transition_operator_kwargs": {
         "n_inner_steps": 5,
-        "init_step_size": 0.5,
+        "init_step_size": 1.0,
         "n_outer_steps": 1,
     }
             }
@@ -166,7 +166,7 @@ if __name__ == '__main__':
     plt.xlabel("Number of samples")
     # plt.ylim(0, 85)
     ax.legend()
-    plt.savefig("empgrad_SNR_nsamples.png", bbox_inches='tight')
+    plt.savefig(f"empgrad_SNR_nsamples.png", bbox_inches='tight')
     plt.show()
 
     analytic_grad = true_gradient_alpha_2_div(mean_q)[0]
@@ -189,34 +189,22 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # Check histogram of samples from AIS.
-
+    # Plot p and q, p^2/q PDFS vs AIS samples.
     dist_q, dist_p = get_dist(mean_q_1d)
     alpha_2_div_1d = analytic_alpha_2_div(mean_q_1d)
-    # Plot p and q.
-    plt.figure(figsize=figsize)
-    samples = x_ais_p2_over_q_all[:, 0]
-    x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
-    plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
-    plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
-    plt.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / alpha_2_div_1d, label="$g \propto p^2/q$") # , label="p2 over q")
-    plt.hist(samples, density=True, bins=200)
-    plt.xlabel("x")
-    plt.ylabel("PDF")
-    plt.legend()
-    plt.show()
+    samples_ais_p2_div_q = x_ais_p2_over_q_all[:, 0]
+    samples_ais_p = x_ais_p_target_all[:, 0]
+    x = jnp.linspace(-5, 5, 50)[:, None]
 
-    # Plot p and q.
-    plt.figure(figsize=figsize)
-    samples = x_ais_p_target_all[:, 0]
-    x = jnp.linspace(-loc*10, loc*10, 50)[:, None]
-    plt.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
-    plt.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
-    # plt.plot(x, jnp.exp(dist_p.log_prob(x)*0.99 + dist_q.log_prob(x)*0.01))
-    plt.hist(samples, density=True, bins=200)
-    plt.xlabel("x")
-    plt.ylabel("PDF")
-    plt.legend()
-    plt.show()
-
-
+    fig = plt.figure()
+    ax = plt.subplot(111)
+    ax.plot(x, jnp.exp(dist_q.log_prob(x)), label="q")
+    ax.plot(x, jnp.exp(dist_p.log_prob(x)), label="p")
+    ax.plot(x, jnp.exp(2*dist_p.log_prob(x) - dist_q.log_prob(x)) / alpha_2_div_1d, label="$g \propto p^2/q$")
+    ax.hist(samples_ais_p2_div_q, density=True, bins=200, label="AIS with $g=p^2/q$")
+    ax.hist(samples_ais_p, density=True, bins=200, label="AIS with $g=p$")
+    plt.legend(loc=(1.04, 0.))
+    ax.set_xlabel("x")
+    ax.set_ylabel("PDF")
+    fig.savefig("ais_samples.png", bbox_inches="tight")
+    fig.show()

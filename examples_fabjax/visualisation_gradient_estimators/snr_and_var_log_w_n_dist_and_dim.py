@@ -22,7 +22,7 @@ if __name__ == '__main__':
     # Whether or not the dims besides the first one are the same.
     # del loc
     loc = 0.5
-    AIS_kwargs = {
+    AIS_kwargs_common = {
         "transition_operator_type": "hmc",
         "additional_transition_operator_kwargs": {
             "n_inner_steps": 5,
@@ -31,6 +31,18 @@ if __name__ == '__main__':
             "step_tuning_method": None
         }
     }
+    AIS_kwargs_blackjax = {
+        "transition_operator_type": "hmc_blackjax",
+        "additional_transition_operator_kwargs": {
+            "n_inner_steps": 5,
+            "init_step_size": 0.5,
+            "n_outer_steps": 1,
+        }
+    }
+    use_blackjax = True
+
+    AIS_kwargs = AIS_kwargs_blackjax
+
     common_alt_dims = False
     distribution_spacing_type = "linear"  # "geometric"
     ais_samples_hist = []
@@ -94,31 +106,36 @@ if __name__ == '__main__':
     ax.plot(n_dims, jnp.var(jnp.asarray(p_IS_log_w_hist), axis=1), "o-", label="IS with p")
     ax.set_ylabel("Var $( \log w )$")
     ax.set_xlabel("Number of dimensions")
+    ax.set_ylim(0)
+    ax.set_xlim(0)
     ax.set_xticks(ax.get_xticks()[:-1])
     assert n_dims == n_ais_dist_s
     ax2.set_xlim(ax.get_xlim())
     ax2.set_xticks(ax.get_xticks())
     ax2.set_xlabel("Number of AIS distributions")
     ax.legend()
+    plt.tight_layout()
     plt.savefig(f"empgrad_var_log_w_n_dim_and_n_dist.png", bbox_inches='tight')
     plt.show()
 
 
     fig, ax = plt.subplots(figsize=figsize)
+    ax2 = ax.twiny()
     plot_snr(n_dims, grad_ais_hist_p2_over_q, ax=ax, label="AIS with $g=p^2/q$",
              log_scale=False, draw_style="o-")
     plot_snr(n_dims, grad_hist_over_p,
              ax=ax, label="IS with p", draw_style="o-", log_scale=False)
-    # ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
+    ax.legend(loc="best") # , bbox_to_anchor=(0.5, 0.25, 0.5, 0.9))
+    ax.set_ylabel("SNR")
     ax.set_xlabel("Number of dimensions")
     ax.set_ylim(0)
-    ax.set_ylabel("SNR")
-    ax2 = ax.twiny()
+    ax.set_xlim(0)
     ax.set_xticks(ax.get_xticks()[:-1])
     ax2.set_xlim(ax.get_xlim())
     ax2.set_xticks(ax.get_xticks())
     ax2.set_xlabel("Number of AIS distributions")
-    # ax.legend()
+    ax.legend()
+    plt.tight_layout()
     fig.savefig(f"empgrad_SNR_n_dim_and_n_dist.png", bbox_inches='tight')
     plt.show()
 
