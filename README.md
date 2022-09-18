@@ -1,5 +1,5 @@
 # Flow Annealed Importance Sampling Boostrap (FAB) implementation in JAX
-See corresponding paper [here](https://arxiv.org/abs/2111.11510).
+See corresponding paper [here](https://arxiv.org/abs/2208.01893).
 
 This repo is still a work in progress, the ```fab``` folder and ```examples``` have some working 
 illustrative problems.
